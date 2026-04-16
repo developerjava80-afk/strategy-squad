@@ -5,7 +5,7 @@ Production-grade, microservice-based algorithmic trading platform for Nifty and 
 ## Core Trading Approach
 - Statistical arbitrage
 - Mean reversion
-- Realized volatility only (no Implied Volatility (IV), option Greeks, or Volatility Index (VIX) dependencies)
+- Realized volatility only (no implied volatility (IV), option greeks, or volatility index (VIX) dependencies)
 - 15-minute historical buckets
 
 ## Architecture Constraints (Non-Negotiable)
