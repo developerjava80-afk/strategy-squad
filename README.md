@@ -167,7 +167,7 @@ Partition by MONTH.
 
 #### 8. options_context_buckets (Aggregated)
 
-Contextual aggregation across contracts. Groups by moneyness bucket + DTE bucket + option type. Answers: *"Is this option price normal or abnormal for a 2% OTM CE at 120 minutes to expiry?"*
+Contextual aggregation across contracts. Groups by moneyness bucket + DTE bucket + option type. Answers: "Is this option price normal or abnormal for a 2% OTM CE at 120 minutes to expiry?"
 
 ```
 bucket_ts                TIMESTAMP     -- designated timestamp
