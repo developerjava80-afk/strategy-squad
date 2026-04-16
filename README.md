@@ -1,5 +1,5 @@
 # strategy-squad
-Agent-driven algorithmic trading platform for Nifty &amp; BankNifty options
+Agent-driven algorithmic trading platform for Nifty & BankNifty options
 
 ## Golden Source Architecture Review (Single Source of Truth)
 
