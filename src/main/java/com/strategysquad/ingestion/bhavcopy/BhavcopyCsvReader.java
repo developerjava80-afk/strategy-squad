@@ -55,7 +55,7 @@ public class BhavcopyCsvReader {
                 for (int i = 0; i < headers.size(); i++) {
                     columns.put(headers.get(i), values.get(i).trim());
                 }
-                rows.add(new CsvRow(lineNumber, columns));
+                rows.add(new CsvRow(lineNumber, line, columns));
             }
             return new ReadResult(rows, invalidRows, totalDataRows);
         }
@@ -92,11 +92,15 @@ public class BhavcopyCsvReader {
         return tokens;
     }
 
-    public record CsvRow(long lineNumber, Map<String, String> columns) {
+    public record CsvRow(long lineNumber, String rawLine, Map<String, String> columns) {
         public CsvRow {
+            Objects.requireNonNull(rawLine, "rawLine must not be null");
             Objects.requireNonNull(columns, "columns must not be null");
         }
 
+        /**
+         * Returns the column value for the provided header name, or an empty string if absent.
+         */
         public String column(String name) {
             String normalized = name.trim().toUpperCase();
             return columns.getOrDefault(normalized, "");

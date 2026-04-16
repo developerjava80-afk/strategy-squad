@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,9 +38,35 @@ public class BhavcopyWriter {
         if (records.isEmpty()) {
             return new WriteResult(0, 0);
         }
-        int instrumentsInserted = insertInstruments(connection, records);
-        int historicalInserted = insertOptionsHistorical(connection, records);
-        return new WriteResult(instrumentsInserted, historicalInserted);
+        boolean autoCommit = connection.getAutoCommit();
+        Savepoint savepoint = null;
+        if (autoCommit) {
+            connection.setAutoCommit(false);
+        } else {
+            savepoint = connection.setSavepoint("bhavcopy_ingestion_write");
+        }
+        try {
+            int instrumentsInserted = insertInstruments(connection, records);
+            int historicalInserted = insertOptionsHistorical(connection, records);
+            if (autoCommit) {
+                connection.commit();
+            }
+            return new WriteResult(instrumentsInserted, historicalInserted);
+        } catch (SQLException ex) {
+            if (autoCommit) {
+                connection.rollback();
+            } else if (savepoint != null) {
+                connection.rollback(savepoint);
+            }
+            throw ex;
+        } finally {
+            if (!autoCommit && savepoint != null) {
+                connection.releaseSavepoint(savepoint);
+            }
+            if (autoCommit) {
+                connection.setAutoCommit(true);
+            }
+        }
     }
 
     private int insertInstruments(Connection connection, List<BhavcopyRecord> records) throws SQLException {
@@ -81,9 +108,12 @@ public class BhavcopyWriter {
         }
     }
 
-    private int successfulBatchCount(int[] results) {
+    private int successfulBatchCount(int[] results) throws SQLException {
         int count = 0;
         for (int result : results) {
+            if (result == Statement.EXECUTE_FAILED) {
+                throw new SQLException("Batch execution failed for one or more rows");
+            }
             if (result == Statement.SUCCESS_NO_INFO || result >= 0) {
                 count++;
             }

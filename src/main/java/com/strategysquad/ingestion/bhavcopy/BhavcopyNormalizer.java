@@ -12,6 +12,7 @@ import java.util.Locale;
  * Normalizes filtered Bhavcopy rows into internal records.
  */
 public class BhavcopyNormalizer {
+    private static final String MISSING_VALUE_MARKER = "-";
     private static final DateTimeFormatter BHAVCOPY_DATE_FORMAT = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("dd-MMM-uuuu")
@@ -60,15 +61,19 @@ public class BhavcopyNormalizer {
 
     private String required(BhavcopyCsvReader.CsvRow row, String column) {
         String value = row.column(column);
-        if (value == null || value.trim().isEmpty() || "-".equals(value.trim())) {
+        if (value == null) {
             throw new IllegalArgumentException(column + " is missing");
         }
-        return value.trim();
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || MISSING_VALUE_MARKER.equals(trimmed)) {
+            throw new IllegalArgumentException(column + " is missing");
+        }
+        return trimmed;
     }
 
     private BigDecimal parseDecimal(String value, String fieldName) {
         try {
-            return new BigDecimal(value.replace(",", ""));
+            return new BigDecimal(value.replace(",", "").trim());
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException(fieldName + " is not a valid decimal: " + value, ex);
         }
@@ -76,9 +81,9 @@ public class BhavcopyNormalizer {
 
     private long parseLong(String value, String fieldName) {
         try {
-            return Long.parseLong(value.replace(",", ""));
+            return Long.parseLong(value.replace(",", "").trim());
         } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException(fieldName + " is not a valid integer: " + value, ex);
+            throw new IllegalArgumentException(fieldName + " is not a valid long: " + value, ex);
         }
     }
 

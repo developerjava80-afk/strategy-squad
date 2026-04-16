@@ -58,7 +58,7 @@ public class BhavcopyIngestionJob {
                 String instrumentId = instrumentResolver.resolveInstrumentId(record.instrumentKey());
                 normalized.add(record.withInstrumentId(instrumentId));
             } catch (RuntimeException ex) {
-                invalidRows.add(new InvalidRow(row.lineNumber(), ex.getMessage(), row.columns().toString()));
+                invalidRows.add(new InvalidRow(row.lineNumber(), ex.getMessage(), row.rawLine()));
             }
         }
 
