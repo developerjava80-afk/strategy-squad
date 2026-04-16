@@ -22,6 +22,12 @@ public record InstrumentKey(
         underlying = normalizeRequired(underlying, "underlying");
         optionType = normalizeRequired(optionType, "optionType");
         strike = strike.stripTrailingZeros();
+        if (strike.signum() <= 0) {
+            throw new IllegalArgumentException("strike must be positive");
+        }
+        if (!optionType.equals("CE") && !optionType.equals("PE")) {
+            throw new IllegalArgumentException("optionType must be CE or PE");
+        }
     }
 
     private static String normalizeRequired(String value, String fieldName) {

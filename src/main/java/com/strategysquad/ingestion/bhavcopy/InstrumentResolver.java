@@ -20,7 +20,7 @@ public class InstrumentResolver {
         return ID_PREFIX + sha256Hex(identity);
     }
 
-    String canonicalIdentity(InstrumentKey key) {
+    private String canonicalIdentity(InstrumentKey key) {
         return String.join(
                 "|",
                 key.underlying(),
