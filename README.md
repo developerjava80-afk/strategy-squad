@@ -63,7 +63,8 @@ These corrections are required before building further on the current schema.
 
 **spot_historical**
 ```
-trade_date       DATE          -- Bhavcopy trade date
+trade_ts         TIMESTAMP     -- designated timestamp (normalized to market close for the trade date)
+trade_date       DATE          -- Bhavcopy trade date (denormalized for readable filtering)
 underlying       SYMBOL        -- NIFTY / BANKNIFTY
 open_price       DOUBLE
 high_price       DOUBLE
