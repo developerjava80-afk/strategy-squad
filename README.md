@@ -1,11 +1,11 @@
 # Strategy Squad
 
-Production-grade, microservice-based algorithmic trading platform for Nifty and Bank Nifty options.
+Production-grade, microservice-based algorithmic trading platform for Nifty and BankNifty options.
 
 ## Core Trading Approach
 - Statistical arbitrage
 - Mean reversion
-- Realized volatility only (no IV/Greeks/VIX dependencies)
+- Realized volatility only (no Implied Volatility (IV), Greeks, or Volatility Index (VIX) dependencies)
 - 15-minute historical buckets
 
 ## Architecture Constraints (Non-Negotiable)
@@ -32,7 +32,7 @@ No order can reach `execution-service` without:
 - `risk-guardian` is final authority
 - Daily drawdown kill switch required
 - Every trade must be traceable
-- Every execution must map to `trade_intent -> risk_decision -> execution`
+- Every execution must map to `trade_intent_v1 -> risk_decision_v1 -> execution_update_v1`
 
 ## Service Boundaries
 Service ownership is independent and must not be crossed:
