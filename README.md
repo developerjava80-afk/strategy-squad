@@ -5,7 +5,7 @@ Production-grade, microservice-based algorithmic trading platform for Nifty and 
 ## Core Trading Approach
 - Statistical arbitrage
 - Mean reversion
-- Realized volatility only (no Implied Volatility (IV), Greeks, or Volatility Index (VIX) dependencies)
+- Realized volatility only (no Implied Volatility (IV), option Greeks, or Volatility Index (VIX) dependencies)
 - 15-minute historical buckets
 
 ## Architecture Constraints (Non-Negotiable)
@@ -32,7 +32,10 @@ No order can reach `execution-service` without:
 - `risk-guardian` is final authority
 - Daily drawdown kill switch required
 - Every trade must be traceable
-- Every execution must map to `trade_intent_v1 -> risk_decision_v1 -> execution_update_v1`
+- Every execution must map to the canonical event chain:
+  - `trade_intent_v1`
+  - `risk_decision_v1`
+  - `execution_update_v1`
 
 ## Service Boundaries
 Service ownership is independent and must not be crossed:
