@@ -1,11 +1,11 @@
 # Strategy Squad
 
-Production-grade, microservice-based algorithmic trading platform for Nifty and BankNifty options.
+Production-grade, microservice-based algorithmic trading platform for Nifty and Bank Nifty options.
 
 ## Core Trading Approach
 - Statistical arbitrage
 - Mean reversion
-- Realized volatility only (no implied volatility (IV), option greeks, or volatility index (VIX) dependencies)
+- Realized volatility only (no implied volatility (IV), option Greeks, or volatility index (VIX) dependencies)
 - 15-minute historical buckets
 
 ## Architecture Constraints (Non-Negotiable)
