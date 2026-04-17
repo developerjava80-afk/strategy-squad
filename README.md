@@ -343,12 +343,21 @@ These are valuable but not required for the initial trading-grade pipeline.
 
 ### Implementation sequence
 
-1. Create `instrument_master` with `expiry_type`
-2. Create `spot_historical` + `spot_live`
-3. Create `options_live` with `exchange_ts` / `ingest_ts` / `underlying`
-4. Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
-5. Create `options_context_buckets`
-6. Implement Bhavcopy ingestion (options + spot historical)
-7. Implement live feed ingestion with two-timestamp model
-8. Implement enrichment pipeline (point-in-time spot join → moneyness computation)
-9. Implement contextual aggregation pipeline
+- [x] Create `instrument_master` with `expiry_type`
+- [x] Create `spot_historical` + `spot_live`
+- [x] Create `options_live` with `exchange_ts` / `ingest_ts` / `underlying`
+- [x] Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
+- [x] Create `options_context_buckets`
+- [x] Implement Bhavcopy ingestion (options + spot historical)
+- [x] Implement live feed ingestion with two-timestamp model
+- [x] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
+- [ ] Implement contextual aggregation pipeline
+
+### Active next-step driver
+
+- **Current status summary**: The repository now covers canonical schema, Bhavcopy historical ingestion, canonical live raw ingestion, and point-in-time enrichment into `options_enriched`. Contextual aggregation is the remaining gap.
+- **Next required step**: Implement the aggregation pipeline for `options_15m_buckets` and `options_context_buckets` on top of `options_enriched`.
+- **Reason**: The enriched layer now provides consistent DTE, moneyness, and underlying-price context. The remaining strategy-facing capability is to roll those facts into reusable historical bucket baselines for anomaly and comparison queries.
+- **Ownership recommendation**: Golden Source / analytic-vault ownership should implement aggregation and its recomputation path. Feed-service ownership does not need to change for this step.
+- **Proposed next issue**: `Implement aggregation pipeline for options_15m_buckets and options_context_buckets`
+- **Codex review needed**: Yes for the implementation PR that introduces aggregation logic and bucket definitions.
