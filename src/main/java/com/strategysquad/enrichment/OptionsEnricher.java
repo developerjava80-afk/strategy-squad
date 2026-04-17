@@ -23,6 +23,8 @@ public class OptionsEnricher {
     private static final BigDecimal POINT_BUCKET_SIZE = BigDecimal.valueOf(50);
     private static final Set<String> POINT_BUCKET_UNDERLYINGS = Set.of("NIFTY", "BANKNIFTY");
     private static final LocalTime MARKET_CLOSE_IST = LocalTime.of(15, 30);
+    private static final ZoneOffset IST_OFFSET = ZoneOffset.ofHoursMinutes(5, 30);
+    private static final int MONEYNESS_PCT_SCALE = 8;
 
     public OptionEnrichedTick enrich(
             OptionLiveTick optionTick,
@@ -54,7 +56,7 @@ public class OptionsEnricher {
         BigDecimal moneynessPoints = instrument.strike().subtract(spotTick.lastPrice(), MATH_CONTEXT);
         BigDecimal moneynessPct = moneynessPoints
                 .multiply(ONE_HUNDRED, MATH_CONTEXT)
-                .divide(spotTick.lastPrice(), 8, RoundingMode.HALF_UP);
+                .divide(spotTick.lastPrice(), MONEYNESS_PCT_SCALE, RoundingMode.HALF_UP);
 
         return new OptionEnrichedTick(
                 optionTick.exchangeTs(),
@@ -76,7 +78,7 @@ public class OptionsEnricher {
     static Instant normalizeExpiryTs(Instant expiryTs) {
         LocalDateTime dateTime = LocalDateTime.ofInstant(expiryTs, ZoneOffset.UTC);
         if (dateTime.toLocalTime().equals(LocalTime.MIDNIGHT)) {
-            return dateTime.toLocalDate().atTime(MARKET_CLOSE_IST).toInstant(ZoneOffset.UTC);
+            return dateTime.toLocalDate().atTime(MARKET_CLOSE_IST).toInstant(IST_OFFSET);
         }
         return expiryTs;
     }
