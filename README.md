@@ -343,12 +343,21 @@ These are valuable but not required for the initial trading-grade pipeline.
 
 ### Implementation sequence
 
-1. Create `instrument_master` with `expiry_type`
-2. Create `spot_historical` + `spot_live`
-3. Create `options_live` with `exchange_ts` / `ingest_ts` / `underlying`
-4. Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
-5. Create `options_context_buckets`
-6. Implement Bhavcopy ingestion (options + spot historical)
-7. Implement live feed ingestion with two-timestamp model
-8. Implement enrichment pipeline (point-in-time spot join → moneyness computation)
-9. Implement contextual aggregation pipeline
+- [x] Create `instrument_master` with `expiry_type`
+- [x] Create `spot_historical` + `spot_live`
+- [x] Create `options_live` with `exchange_ts` / `ingest_ts` / `underlying`
+- [x] Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
+- [x] Create `options_context_buckets`
+- [x] Implement Bhavcopy ingestion (options + spot historical)
+- [ ] Implement live feed ingestion with two-timestamp model
+- [ ] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
+- [ ] Implement contextual aggregation pipeline
+
+### Active next-step driver
+
+- **Current status summary**: The repository is aligned through the historical path. Canonical schema + DDL are present, and Bhavcopy ingestion writes `instrument_master`, `options_historical`, and `spot_historical`. Live raw ingestion, enrichment, and aggregation are not implemented yet.
+- **Next required step**: Implement the minimal live ingestion contract and persistence path for both `options_live` and `spot_live`. Lock the canonical payload fields, append-only write behavior, and `exchange_ts` / `ingest_ts` handling before any enriched-layer work.
+- **Reason**: `options_enriched` depends on a point-in-time join against immutable `spot_live`, and replay depends on exchange-time-ordered raw events. Until step 7 exists, steps 8 and 9 cannot be implemented correctly.
+- **Ownership recommendation**: Feed-service ownership should provide/adapt the incoming tick payload contract. Golden Source / analytic-vault implementation should own QuestDB persistence and contract tests for the live raw tables.
+- **Proposed next issue**: `Implement canonical live tick ingestion for options_live and spot_live`
+- **Codex review needed**: Not for this status update. Yes for the implementation PR that introduces live ingestion.
