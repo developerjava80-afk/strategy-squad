@@ -31,7 +31,8 @@ class OptionsEnrichedWriterTest {
                 82,
                 new BigDecimal("-9.13155408"),
                 new BigDecimal("-2210.15"),
-                -2200
+                -2200,
+                125
         );
 
         int inserted = new OptionsEnrichedWriter().write(connectionRecorder.proxy(), List.of(tick));
@@ -50,7 +51,8 @@ class OptionsEnrichedWriterTest {
                 Map.entry(10, 82),
                 Map.entry(11, new BigDecimal("-9.13155408")),
                 Map.entry(12, new BigDecimal("-2210.15")),
-                Map.entry(13, -2200)
+                Map.entry(13, -2200),
+                Map.entry(14, 125L)
         )), statementRecorder.batchParameters());
     }
 }

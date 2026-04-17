@@ -1,38 +1,31 @@
-package com.strategysquad.enrichment;
+package com.strategysquad.aggregation;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class EnrichmentJdbcTestSupport {
-    private EnrichmentJdbcTestSupport() {
+final class AggregationJdbcTestSupport {
+    private AggregationJdbcTestSupport() {
     }
 
     static final class PreparedStatementRecorder {
         private final List<Map<Integer, Object>> batchParameters = new ArrayList<>();
         private final Map<Integer, Object> currentParameters = new LinkedHashMap<>();
         private final int[] executeBatchResult;
-        private final ResultSet resultSet;
 
         PreparedStatementRecorder(int[] executeBatchResult) {
-            this(executeBatchResult, null);
-        }
-
-        PreparedStatementRecorder(int[] executeBatchResult, ResultSet resultSet) {
             this.executeBatchResult = executeBatchResult;
-            this.resultSet = resultSet;
         }
 
         PreparedStatement proxy() {
             InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
-                case "setTimestamp", "setString", "setBigDecimal", "setInt", "setLong" -> {
+                case "setTimestamp", "setString", "setBigDecimal", "setInt", "setLong", "setDate" -> {
                     currentParameters.put((Integer) args[0], args[1]);
                     yield null;
                 }
@@ -42,7 +35,6 @@ final class EnrichmentJdbcTestSupport {
                     yield null;
                 }
                 case "executeBatch" -> executeBatchResult;
-                case "executeQuery" -> resultSet;
                 case "close" -> null;
                 default -> defaultValue(method.getReturnType());
             };
@@ -55,10 +47,6 @@ final class EnrichmentJdbcTestSupport {
 
         List<Map<Integer, Object>> batchParameters() {
             return batchParameters;
-        }
-
-        Map<Integer, Object> currentParameters() {
-            return currentParameters;
         }
     }
 
@@ -120,27 +108,6 @@ final class EnrichmentJdbcTestSupport {
         List<String> events() {
             return events;
         }
-    }
-
-    static ResultSet resultSet(List<Map<String, Object>> rows) {
-        InvocationHandler handler = new InvocationHandler() {
-            private int index = -1;
-
-            @Override
-            public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
-                return switch (method.getName()) {
-                    case "next" -> ++index < rows.size();
-                    case "getString", "getBigDecimal", "getTimestamp" -> rows.get(index).get(args[0]);
-                    case "close" -> null;
-                    default -> defaultValue(method.getReturnType());
-                };
-            }
-        };
-        return (ResultSet) Proxy.newProxyInstance(
-                ResultSet.class.getClassLoader(),
-                new Class<?>[]{ResultSet.class},
-                handler
-        );
     }
 
     private static Object defaultValue(Class<?> returnType) {

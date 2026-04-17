@@ -20,7 +20,8 @@ public record OptionEnrichedTick(
         int timeBucket15m,
         BigDecimal moneynessPct,
         BigDecimal moneynessPoints,
-        int moneynessBucket
+        int moneynessBucket,
+        long volume
 ) {
     public OptionEnrichedTick {
         Objects.requireNonNull(exchangeTs, "exchangeTs must not be null");
@@ -38,6 +39,9 @@ public record OptionEnrichedTick(
         }
         if (timeBucket15m < 0) {
             throw new IllegalArgumentException("timeBucket15m must not be negative");
+        }
+        if (volume < 0) {
+            throw new IllegalArgumentException("volume must not be negative");
         }
     }
 
