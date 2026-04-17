@@ -143,6 +143,7 @@ time_bucket_15m      INT           -- floor(minutes_to_expiry / 15)
 moneyness_pct        DOUBLE        -- percent distance from spot
 moneyness_points     DOUBLE        -- absolute point distance from spot
 moneyness_bucket     INT           -- rounded band (nearest 1% or 50 points, per underlying)
+volume               LONG          -- carried from options_live for aggregation
 ```
 
 Partition by DAY.
@@ -282,7 +283,8 @@ CREATE TABLE options_enriched (
     time_bucket_15m      INT,
     moneyness_pct        DOUBLE,
     moneyness_points     DOUBLE,
-    moneyness_bucket     INT
+    moneyness_bucket     INT,
+    volume               LONG
 ) timestamp(exchange_ts) PARTITION BY DAY;
 
 CREATE TABLE options_15m_buckets (
@@ -323,6 +325,7 @@ These changes were applied to the v1 schema before further implementation. They 
 | `options_enriched` expanded with moneyness (pct + points), underlying price, denormalized fields | Moneyness and DTE are the primary dimensions for all target use cases. Ad hoc computation in consumers produces divergent results. |
 | `options_context_buckets` table added | Per-contract buckets cannot answer "Is this price normal for this moneyness/DTE context?" The context table is the primary strategy lookup structure. |
 | `expiry_type` added to `instrument_master` | Weekly vs monthly distinction affects analytics. Adding after data is loaded requires backfill against exchange calendars. |
+| `volume` added to `options_enriched` | Aggregation tables (`options_15m_buckets.volume_sum`, `options_context_buckets.avg_volume`) require volume. Carrying it from `options_live` into the enriched layer makes aggregation self-contained without cross-table joins. |
 | Raw immutability policy | If raw data is ever mutated, replay results become non-reproducible. Costs nothing to enforce now. |
 
 ---
@@ -351,13 +354,12 @@ These are valuable but not required for the initial trading-grade pipeline.
 - [x] Implement Bhavcopy ingestion (options + spot historical)
 - [x] Implement live feed ingestion with two-timestamp model
 - [x] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
-- [ ] Implement contextual aggregation pipeline
+- [x] Implement contextual aggregation pipeline
 
 ### Active next-step driver
 
-- **Current status summary**: The repository now covers canonical schema, Bhavcopy historical ingestion, canonical live raw ingestion, and point-in-time enrichment into `options_enriched`. Contextual aggregation is the remaining gap.
-- **Next required step**: Implement the aggregation pipeline for `options_15m_buckets` and `options_context_buckets` on top of `options_enriched`.
-- **Reason**: The enriched layer now provides consistent DTE, moneyness, and underlying-price context. The remaining strategy-facing capability is to roll those facts into reusable historical bucket baselines for anomaly and comparison queries.
-- **Ownership recommendation**: Golden Source / analytic-vault ownership should implement aggregation and its recomputation path. Feed-service ownership does not need to change for this step.
-- **Proposed next issue**: `Implement aggregation pipeline for options_15m_buckets and options_context_buckets`
-- **Codex review needed**: Yes for the implementation PR that introduces aggregation logic and bucket definitions.
+- **Current status summary**: All nine implementation sequence steps are complete. The repository now covers canonical schema, Bhavcopy historical ingestion, live raw ingestion, point-in-time enrichment, and contextual aggregation into `options_15m_buckets` and `options_context_buckets`.
+- **Next required step**: Integration-level wiring — connect the aggregation pipeline into `LiveTickIngestionJob` so enriched ticks are aggregated inline during live ingestion, or define the batch-recompute entry point.
+- **Reason**: The aggregation logic, writers, and orchestration job exist and are unit-tested. They need to be invoked from the live ingestion pipeline or a scheduled batch job to produce actual bucket rows.
+- **Ownership recommendation**: Golden Source / analytic-vault ownership. Feed-service does not need to change.
+- **Codex review needed**: Yes for the implementation PR that introduces aggregation logic and the `volume` addition to `options_enriched`.

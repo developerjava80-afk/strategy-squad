@@ -73,7 +73,8 @@ CREATE TABLE options_enriched (
     time_bucket_15m      INT,
     moneyness_pct        DOUBLE,
     moneyness_points     DOUBLE,
-    moneyness_bucket     INT
+    moneyness_bucket     INT,
+    volume               LONG
 ) timestamp(exchange_ts) PARTITION BY DAY;
 
 CREATE TABLE options_15m_buckets (

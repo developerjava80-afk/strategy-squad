@@ -71,7 +71,8 @@ public class OptionsEnricher {
                 timeBucket15m,
                 moneynessPct,
                 moneynessPoints,
-                deriveMoneynessBucket(optionTick.underlying(), moneynessPct, moneynessPoints)
+                deriveMoneynessBucket(optionTick.underlying(), moneynessPct, moneynessPoints),
+                optionTick.volume()
         );
     }
 

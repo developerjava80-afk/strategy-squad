@@ -47,6 +47,7 @@ class OptionsEnricherTest {
         // (22000 - 21950) * 100 / 21950 = 0.22779043
         assertEquals(new BigDecimal("0.22779043"), enrichedTick.moneynessPct());
         assertEquals(50, enrichedTick.moneynessBucket());
+        assertEquals(125, enrichedTick.volume());
     }
 
     @Test
