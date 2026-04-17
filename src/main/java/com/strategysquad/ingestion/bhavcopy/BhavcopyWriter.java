@@ -6,6 +6,9 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,12 +16,24 @@ import java.util.Objects;
 
 /**
  * Writes normalized Bhavcopy data into instrument and historical tables in batches.
+ *
+ * <p>SQL statements match the frozen Golden Source DDL (V001). Column names and
+ * ordering align with {@code instrument_master} and {@code options_historical}.
  */
 public class BhavcopyWriter {
     private static final String DEFAULT_INSERT_INSTRUMENT_SQL =
-            "INSERT INTO instrument_master (instrument_id, underlying, expiry_date, strike, option_type) VALUES (?, ?, ?, ?, ?)";
+            "INSERT INTO instrument_master"
+                    + " (instrument_id, underlying, symbol, expiry_date, strike, option_type,"
+                    + "  is_active, expiry_type, created_at, updated_at)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String DEFAULT_INSERT_OPTIONS_SQL =
-            "INSERT INTO options_historical (instrument_id, trade_date, open, high, low, close, settle_price, contracts, value_in_lakhs, open_interest, change_in_oi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            "INSERT INTO options_historical"
+                    + " (trade_ts, trade_date, instrument_id, open_price, high_price,"
+                    + "  low_price, close_price, volume, open_interest)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+    /** Market close time used to normalize trade_date into trade_ts (IST 15:30). */
+    private static final LocalTime MARKET_CLOSE_IST = LocalTime.of(15, 30);
 
     private final String insertInstrumentSql;
     private final String insertOptionsSql;
@@ -75,33 +90,52 @@ public class BhavcopyWriter {
             uniqueByInstrumentId.putIfAbsent(record.instrumentId(), record);
         }
 
+        Timestamp now = Timestamp.valueOf(java.time.LocalDateTime.now());
         try (PreparedStatement statement = connection.prepareStatement(insertInstrumentSql)) {
             for (BhavcopyRecord record : uniqueByInstrumentId.values()) {
                 statement.setString(1, record.instrumentId());
                 statement.setString(2, record.underlying());
-                statement.setDate(3, Date.valueOf(record.expiryDate()));
-                statement.setBigDecimal(4, record.strike());
-                statement.setString(5, record.optionType());
+                statement.setString(3, record.underlying());          // symbol = underlying for index options
+                statement.setTimestamp(4, Timestamp.valueOf(record.expiryDate().atStartOfDay()));
+                statement.setBigDecimal(5, record.strike());
+                statement.setString(6, record.optionType());
+                statement.setBoolean(7, !record.expiryDate().isBefore(record.tradeDate())); // is_active
+                statement.setString(8, deriveExpiryType(record.expiryDate()));               // expiry_type
+                statement.setTimestamp(9, now);                        // created_at
+                statement.setTimestamp(10, now);                       // updated_at
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());
         }
     }
 
+    /**
+     * Derives expiry type from the expiry date. Monthly expiries fall on the last
+     * Thursday of the month; all others are treated as weekly.
+     */
+    static String deriveExpiryType(LocalDate expiryDate) {
+        // Find last Thursday of the expiry month
+        LocalDate lastDay = expiryDate.withDayOfMonth(expiryDate.lengthOfMonth());
+        while (lastDay.getDayOfWeek() != java.time.DayOfWeek.THURSDAY) {
+            lastDay = lastDay.minusDays(1);
+        }
+        return expiryDate.equals(lastDay) ? "MONTHLY" : "WEEKLY";
+    }
+
     private int insertOptionsHistorical(Connection connection, List<BhavcopyRecord> records) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(insertOptionsSql)) {
             for (BhavcopyRecord record : records) {
-                statement.setString(1, record.instrumentId());
+                // trade_ts: normalized to market close (IST 15:30) on trade_date
+                Timestamp tradeTs = Timestamp.valueOf(record.tradeDate().atTime(MARKET_CLOSE_IST));
+                statement.setTimestamp(1, tradeTs);
                 statement.setDate(2, Date.valueOf(record.tradeDate()));
-                statement.setBigDecimal(3, record.open());
-                statement.setBigDecimal(4, record.high());
-                statement.setBigDecimal(5, record.low());
-                statement.setBigDecimal(6, record.close());
-                statement.setBigDecimal(7, record.settlePrice());
-                statement.setLong(8, record.contracts());
-                statement.setBigDecimal(9, record.valueInLakhs());
-                statement.setLong(10, record.openInterest());
-                statement.setLong(11, record.changeInOi());
+                statement.setString(3, record.instrumentId());
+                statement.setBigDecimal(4, record.open());         // open_price
+                statement.setBigDecimal(5, record.high());         // high_price
+                statement.setBigDecimal(6, record.low());          // low_price
+                statement.setBigDecimal(7, record.close());        // close_price
+                statement.setLong(8, record.contracts());          // volume (contracts from Bhavcopy)
+                statement.setLong(9, record.openInterest());       // open_interest
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());
