@@ -349,15 +349,15 @@ These are valuable but not required for the initial trading-grade pipeline.
 - [x] Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
 - [x] Create `options_context_buckets`
 - [x] Implement Bhavcopy ingestion (options + spot historical)
-- [ ] Implement live feed ingestion with two-timestamp model
+- [x] Implement live feed ingestion with two-timestamp model
 - [ ] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
 - [ ] Implement contextual aggregation pipeline
 
 ### Active next-step driver
 
-- **Current status summary**: The repository is aligned through the historical path. Canonical schema + DDL are present, and Bhavcopy ingestion writes `instrument_master`, `options_historical`, and `spot_historical`. Live raw ingestion, enrichment, and aggregation are not implemented yet.
-- **Next required step**: Implement the minimal live ingestion contract and persistence path for both `options_live` and `spot_live`. Lock the canonical payload fields, append-only write behavior, and `exchange_ts` / `ingest_ts` handling before any enriched-layer work.
-- **Reason**: `options_enriched` depends on a point-in-time join against immutable `spot_live`, and replay depends on exchange-time-ordered raw events. Until step 7 exists, steps 8 and 9 cannot be implemented correctly.
-- **Ownership recommendation**: Feed-service ownership should provide/adapt the incoming tick payload contract. Golden Source / analytic-vault implementation should own QuestDB persistence and contract tests for the live raw tables.
-- **Proposed next issue**: `Implement canonical live tick ingestion for options_live and spot_live`
-- **Codex review needed**: Not for this status update. Yes for the implementation PR that introduces live ingestion.
+- **Current status summary**: The repository now covers canonical schema, Bhavcopy historical ingestion, and canonical live raw ingestion for `options_live` and `spot_live` with the two-timestamp contract. Enrichment and contextual aggregation are still pending.
+- **Next required step**: Implement the enrichment pipeline that joins each `options_live` tick to the latest `spot_live` tick at or before the option `exchange_ts`, then writes the derived fields into `options_enriched`.
+- **Reason**: Moneyness, DTE, and point-in-time underlying price are the stable feature contract for all downstream pricing comparison, response analysis, replay, and later context bucketing. Aggregation should be built on enriched facts, not raw ticks.
+- **Ownership recommendation**: Golden Source / analytic-vault ownership should implement enrichment and its contract tests. Feed-service ownership remains responsible only for continuing to emit canonical live raw ticks.
+- **Proposed next issue**: `Implement point-in-time enrichment pipeline for options_enriched`
+- **Codex review needed**: Yes for the implementation PR that introduces enrichment logic and point-in-time join behavior.
