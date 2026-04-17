@@ -1,5 +1,7 @@
 package com.strategysquad.ingestion.live;
 
+import com.strategysquad.enrichment.OptionsEnrichmentJob;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Savepoint;
@@ -12,14 +14,24 @@ import java.util.Objects;
 public class LiveTickIngestionJob {
     private final OptionsLiveWriter optionsLiveWriter;
     private final SpotLiveWriter spotLiveWriter;
+    private final OptionsEnrichmentJob optionsEnrichmentJob;
 
     public LiveTickIngestionJob() {
-        this(new OptionsLiveWriter(), new SpotLiveWriter());
+        this(new OptionsLiveWriter(), new SpotLiveWriter(), new OptionsEnrichmentJob());
     }
 
     public LiveTickIngestionJob(OptionsLiveWriter optionsLiveWriter, SpotLiveWriter spotLiveWriter) {
+        this(optionsLiveWriter, spotLiveWriter, new OptionsEnrichmentJob());
+    }
+
+    public LiveTickIngestionJob(
+            OptionsLiveWriter optionsLiveWriter,
+            SpotLiveWriter spotLiveWriter,
+            OptionsEnrichmentJob optionsEnrichmentJob
+    ) {
         this.optionsLiveWriter = Objects.requireNonNull(optionsLiveWriter, "optionsLiveWriter must not be null");
         this.spotLiveWriter = Objects.requireNonNull(spotLiveWriter, "spotLiveWriter must not be null");
+        this.optionsEnrichmentJob = Objects.requireNonNull(optionsEnrichmentJob, "optionsEnrichmentJob must not be null");
     }
 
     public IngestionResult ingest(
@@ -42,11 +54,19 @@ public class LiveTickIngestionJob {
         try {
             int spotInserted = spotLiveWriter.write(connection, spotTicks);
             int optionsInserted = optionsLiveWriter.write(connection, optionTicks);
+            int optionsEnrichedInserted = optionsEnrichmentJob.enrich(connection, optionTicks).optionsEnrichedInserted();
             if (autoCommit) {
                 connection.commit();
             }
-            return new IngestionResult(optionTicks.size(), optionsInserted, spotTicks.size(), spotInserted);
+            return new IngestionResult(optionTicks.size(), optionsInserted, spotTicks.size(), spotInserted, optionsEnrichedInserted);
         } catch (SQLException ex) {
+            if (autoCommit) {
+                connection.rollback();
+            } else if (savepoint != null) {
+                connection.rollback(savepoint);
+            }
+            throw ex;
+        } catch (RuntimeException ex) {
             if (autoCommit) {
                 connection.rollback();
             } else if (savepoint != null) {
@@ -67,7 +87,8 @@ public class LiveTickIngestionJob {
             int optionTicksReceived,
             int optionTicksInserted,
             int spotTicksReceived,
-            int spotTicksInserted
+            int spotTicksInserted,
+            int optionsEnrichedInserted
     ) {
     }
 }

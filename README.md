@@ -350,14 +350,14 @@ These are valuable but not required for the initial trading-grade pipeline.
 - [x] Create `options_context_buckets`
 - [x] Implement Bhavcopy ingestion (options + spot historical)
 - [x] Implement live feed ingestion with two-timestamp model
-- [ ] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
+- [x] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
 - [ ] Implement contextual aggregation pipeline
 
 ### Active next-step driver
 
-- **Current status summary**: The repository now covers canonical schema, Bhavcopy historical ingestion, and canonical live raw ingestion for `options_live` and `spot_live` with the two-timestamp contract. Enrichment and contextual aggregation are still pending.
-- **Next required step**: Implement the enrichment pipeline that joins each `options_live` tick to the latest `spot_live` tick at or before the option `exchange_ts`, then writes the derived fields into `options_enriched`.
-- **Reason**: Moneyness, DTE, and point-in-time underlying price are the stable feature contract for all downstream pricing comparison, response analysis, replay, and later context bucketing. Aggregation should be built on enriched facts, not raw ticks.
-- **Ownership recommendation**: Golden Source / analytic-vault ownership should implement enrichment and its contract tests. Feed-service ownership remains responsible only for continuing to emit canonical live raw ticks.
-- **Proposed next issue**: `Implement point-in-time enrichment pipeline for options_enriched`
-- **Codex review needed**: Yes for the implementation PR that introduces enrichment logic and point-in-time join behavior.
+- **Current status summary**: The repository now covers canonical schema, Bhavcopy historical ingestion, canonical live raw ingestion, and point-in-time enrichment into `options_enriched`. Contextual aggregation is the remaining gap.
+- **Next required step**: Implement the aggregation pipeline for `options_15m_buckets` and `options_context_buckets` on top of `options_enriched`.
+- **Reason**: The enriched layer now provides consistent DTE, moneyness, and underlying-price context. The remaining strategy-facing capability is to roll those facts into reusable historical bucket baselines for anomaly and comparison queries.
+- **Ownership recommendation**: Golden Source / analytic-vault ownership should implement aggregation and its recomputation path. Feed-service ownership does not need to change for this step.
+- **Proposed next issue**: `Implement aggregation pipeline for options_15m_buckets and options_context_buckets`
+- **Codex review needed**: Yes for the implementation PR that introduces aggregation logic and bucket definitions.

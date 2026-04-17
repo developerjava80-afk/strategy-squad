@@ -1,5 +1,6 @@
 package com.strategysquad.ingestion.live;
 
+import com.strategysquad.enrichment.OptionsEnrichmentJob;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -18,17 +19,19 @@ class LiveTickIngestionJobTest {
                 new JdbcRecordingSupport.ConnectionRecorder(null, true);
         TrackingOptionsLiveWriter optionsWriter = new TrackingOptionsLiveWriter(2);
         TrackingSpotLiveWriter spotWriter = new TrackingSpotLiveWriter(1, false);
+        TrackingOptionsEnrichmentJob enrichmentJob = new TrackingOptionsEnrichmentJob(2, false);
 
-        LiveTickIngestionJob.IngestionResult result = new LiveTickIngestionJob(optionsWriter, spotWriter).ingest(
+        LiveTickIngestionJob.IngestionResult result = new LiveTickIngestionJob(optionsWriter, spotWriter, enrichmentJob).ingest(
                 connectionRecorder.proxy(),
                 List.of(optionTick(), optionTick()),
                 List.of(spotTick())
         );
 
-        assertEquals(new LiveTickIngestionJob.IngestionResult(2, 2, 1, 1), result);
+        assertEquals(new LiveTickIngestionJob.IngestionResult(2, 2, 1, 1, 2), result);
         assertEquals(List.of("setAutoCommit:false", "commit", "setAutoCommit:true"), connectionRecorder.events());
         assertEquals(1, optionsWriter.calls);
         assertEquals(1, spotWriter.calls);
+        assertEquals(1, enrichmentJob.calls);
     }
 
     @Test
@@ -37,8 +40,9 @@ class LiveTickIngestionJobTest {
                 new JdbcRecordingSupport.ConnectionRecorder(null, true);
         TrackingOptionsLiveWriter optionsWriter = new TrackingOptionsLiveWriter(0);
         TrackingSpotLiveWriter spotWriter = new TrackingSpotLiveWriter(0, true);
+        TrackingOptionsEnrichmentJob enrichmentJob = new TrackingOptionsEnrichmentJob(0, false);
 
-        assertThrows(SQLException.class, () -> new LiveTickIngestionJob(optionsWriter, spotWriter).ingest(
+        assertThrows(SQLException.class, () -> new LiveTickIngestionJob(optionsWriter, spotWriter, enrichmentJob).ingest(
                 connectionRecorder.proxy(),
                 List.of(optionTick()),
                 List.of(spotTick())
@@ -47,6 +51,27 @@ class LiveTickIngestionJobTest {
         assertEquals(List.of("setAutoCommit:false", "rollback", "setAutoCommit:true"), connectionRecorder.events());
         assertEquals(0, optionsWriter.calls);
         assertEquals(1, spotWriter.calls);
+        assertEquals(0, enrichmentJob.calls);
+    }
+
+    @Test
+    void rollsBackWhenEnrichmentFails() {
+        JdbcRecordingSupport.ConnectionRecorder connectionRecorder =
+                new JdbcRecordingSupport.ConnectionRecorder(null, true);
+        TrackingOptionsLiveWriter optionsWriter = new TrackingOptionsLiveWriter(1);
+        TrackingSpotLiveWriter spotWriter = new TrackingSpotLiveWriter(1, false);
+        TrackingOptionsEnrichmentJob enrichmentJob = new TrackingOptionsEnrichmentJob(0, true);
+
+        assertThrows(SQLException.class, () -> new LiveTickIngestionJob(optionsWriter, spotWriter, enrichmentJob).ingest(
+                connectionRecorder.proxy(),
+                List.of(optionTick()),
+                List.of(spotTick())
+        ));
+
+        assertEquals(List.of("setAutoCommit:false", "rollback", "setAutoCommit:true"), connectionRecorder.events());
+        assertEquals(1, optionsWriter.calls);
+        assertEquals(1, spotWriter.calls);
+        assertEquals(1, enrichmentJob.calls);
     }
 
     private static OptionLiveTick optionTick() {
@@ -104,6 +129,26 @@ class LiveTickIngestionJobTest {
                 throw new SQLException("boom");
             }
             return returnValue;
+        }
+    }
+
+    private static final class TrackingOptionsEnrichmentJob extends OptionsEnrichmentJob {
+        private final int returnValue;
+        private final boolean fail;
+        private int calls;
+
+        private TrackingOptionsEnrichmentJob(int returnValue, boolean fail) {
+            this.returnValue = returnValue;
+            this.fail = fail;
+        }
+
+        @Override
+        public EnrichmentResult enrich(java.sql.Connection connection, List<OptionLiveTick> optionTicks) throws SQLException {
+            calls++;
+            if (fail) {
+                throw new SQLException("boom");
+            }
+            return new EnrichmentResult(optionTicks.size(), returnValue);
         }
     }
 }
