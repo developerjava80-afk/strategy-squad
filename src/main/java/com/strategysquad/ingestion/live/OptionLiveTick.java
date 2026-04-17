@@ -25,8 +25,8 @@ public record OptionLiveTick(
         Objects.requireNonNull(bidPrice, "bidPrice must not be null");
         Objects.requireNonNull(askPrice, "askPrice must not be null");
 
-        instrumentId = normalizeRequired(instrumentId, "instrumentId", false);
-        underlying = normalizeRequired(underlying, "underlying", true);
+        instrumentId = normalizeRequired(instrumentId, "instrumentId");
+        underlying = normalizeRequiredUppercase(underlying, "underlying");
         lastPrice = requireNonNegative(lastPrice, "lastPrice");
         bidPrice = requireNonNegative(bidPrice, "bidPrice");
         askPrice = requireNonNegative(askPrice, "askPrice");
@@ -41,13 +41,17 @@ public record OptionLiveTick(
         }
     }
 
-    private static String normalizeRequired(String value, String fieldName, boolean uppercase) {
+    private static String normalizeRequired(String value, String fieldName) {
         Objects.requireNonNull(value, fieldName + " must not be null");
         String normalized = value.trim();
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
-        return uppercase ? normalized.toUpperCase() : normalized;
+        return normalized;
+    }
+
+    private static String normalizeRequiredUppercase(String value, String fieldName) {
+        return normalizeRequired(value, fieldName).toUpperCase();
     }
 
     private static BigDecimal requireNonNegative(BigDecimal value, String fieldName) {
