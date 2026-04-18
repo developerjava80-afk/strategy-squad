@@ -23,6 +23,23 @@ class SpotBhavcopyNormalizerTest {
         assertEquals(0, new BigDecimal("22250.0").compareTo(record.high()));
         assertEquals(0, new BigDecimal("22050.0").compareTo(record.low()));
         assertEquals(0, new BigDecimal("22200.0").compareTo(record.close()));
+        assertNull(record.expiryDate());
+    }
+
+    @Test
+    void normalizesSpotRowWithExpiryDate() {
+        BhavcopyCsvReader.CsvRow row = new BhavcopyCsvReader.CsvRow(3, "raw", Map.ofEntries(
+                Map.entry("SYMBOL", "NIFTY"),
+                Map.entry("TIMESTAMP", "27-Mar-2024"),
+                Map.entry("OPEN", "22100.5"),
+                Map.entry("HIGH", "22250.0"),
+                Map.entry("LOW", "22050.0"),
+                Map.entry("CLOSE", "22200.0"),
+                Map.entry("EXPIRY_DT", "28-Mar-2024")
+        ));
+        SpotBhavcopyRecord record = normalizer.normalize(row);
+
+        assertEquals(LocalDate.of(2024, 3, 28), record.expiryDate());
     }
 
     @Test

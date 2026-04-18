@@ -29,8 +29,9 @@ public class BhavcopyWriter {
     private static final String DEFAULT_INSERT_OPTIONS_SQL =
             "INSERT INTO options_historical"
                     + " (trade_ts, trade_date, instrument_id, open_price, high_price,"
-                    + "  low_price, close_price, volume, open_interest)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "  low_price, close_price, settle_price, volume, value_in_lakhs,"
+                    + "  open_interest, change_in_oi)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /** Market close time used to normalize trade_date into trade_ts (IST 15:30). */
     private static final LocalTime MARKET_CLOSE_IST = LocalTime.of(15, 30);
@@ -134,8 +135,11 @@ public class BhavcopyWriter {
                 statement.setBigDecimal(5, record.high());         // high_price
                 statement.setBigDecimal(6, record.low());          // low_price
                 statement.setBigDecimal(7, record.close());        // close_price
-                statement.setLong(8, record.contracts());          // volume (contracts from Bhavcopy)
-                statement.setLong(9, record.openInterest());       // open_interest
+                statement.setBigDecimal(8, record.settlePrice());  // settle_price
+                statement.setLong(9, record.contracts());          // volume (contracts from Bhavcopy)
+                statement.setBigDecimal(10, record.valueInLakhs()); // value_in_lakhs
+                statement.setLong(11, record.openInterest());      // open_interest
+                statement.setLong(12, record.changeInOi());        // change_in_oi
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

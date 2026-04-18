@@ -64,8 +64,11 @@ open_price       DOUBLE
 high_price       DOUBLE
 low_price        DOUBLE
 close_price      DOUBLE
+settle_price     DOUBLE        -- Bhavcopy settlement price
 volume           LONG
+value_in_lakhs   DOUBLE        -- Bhavcopy notional value in lakhs
 open_interest    LONG
+change_in_oi     LONG          -- daily change in open interest
 ```
 
 Partition by MONTH.
@@ -237,8 +240,11 @@ CREATE TABLE options_historical (
     high_price       DOUBLE,
     low_price        DOUBLE,
     close_price      DOUBLE,
+    settle_price     DOUBLE,
     volume           LONG,
-    open_interest    LONG
+    value_in_lakhs   DOUBLE,
+    open_interest    LONG,
+    change_in_oi     LONG
 ) timestamp(trade_ts) PARTITION BY MONTH;
 
 CREATE TABLE options_live (
@@ -358,7 +364,7 @@ These are valuable but not required for the initial trading-grade pipeline.
 
 ### Active next-step driver
 
-- **Current status summary**: All nine implementation sequence steps are complete. The repository now covers canonical schema, Bhavcopy historical ingestion, live raw ingestion, point-in-time enrichment, and contextual aggregation into `options_15m_buckets` and `options_context_buckets`.
+- **Current status summary**: All nine implementation sequence steps are complete. The repository now covers canonical schema, Bhavcopy historical ingestion (including bulk multi-file loading), live raw ingestion, point-in-time enrichment, and contextual aggregation into `options_15m_buckets` and `options_context_buckets`. Historical tables store full bhavcopy fidelity (settle price, notional value, change in OI). Spot historical ingestion deduplicates FUTIDX rows by nearest expiry to prevent multiple entries per underlying per day.
 - **Next required step**: Integration-level wiring — connect the aggregation pipeline into `LiveTickIngestionJob` so enriched ticks are aggregated inline during live ingestion, or define the batch-recompute entry point.
 - **Reason**: The aggregation logic, writers, and orchestration job exist and are unit-tested. They need to be invoked from the live ingestion pipeline or a scheduled batch job to produce actual bucket rows.
 - **Ownership recommendation**: Golden Source / analytic-vault ownership. Feed-service does not need to change.

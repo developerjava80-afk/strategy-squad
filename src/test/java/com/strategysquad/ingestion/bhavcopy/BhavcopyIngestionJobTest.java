@@ -60,7 +60,8 @@ class BhavcopyIngestionJobTest {
                 new BigDecimal("22450.00"),
                 new BigDecimal("22610.50"),
                 new BigDecimal("22390.25"),
-                new BigDecimal("22595.75")
+                new BigDecimal("22595.75"),
+                LocalDate.of(2024, 4, 25)
         )), spotWriter.records);
     }
 
@@ -89,11 +90,54 @@ class BhavcopyIngestionJobTest {
         columns.put("INSTRUMENT", "FUTIDX");
         columns.put("SYMBOL", "NIFTY");
         columns.put("TIMESTAMP", "17-APR-2024");
+        columns.put("EXPIRY_DT", "25-APR-2024");
         columns.put("OPEN", "22450.00");
         columns.put("HIGH", "22610.50");
         columns.put("LOW", "22390.25");
         columns.put("CLOSE", "22595.75");
         return new BhavcopyCsvReader.CsvRow(lineNumber, "spot-" + lineNumber, columns);
+    }
+
+    @Test
+    void deduplicateNearestExpiryPicksNearestFuture() {
+        LocalDate trade = LocalDate.of(2024, 4, 17);
+        SpotBhavcopyRecord nearMonth = spotRecord("NIFTY", trade, LocalDate.of(2024, 4, 25));
+        SpotBhavcopyRecord farMonth = spotRecord("NIFTY", trade, LocalDate.of(2024, 5, 30));
+
+        List<SpotBhavcopyRecord> result = BhavcopyIngestionJob.deduplicateNearestExpiry(
+                List.of(farMonth, nearMonth));
+
+        assertEquals(1, result.size());
+        assertEquals(nearMonth, result.get(0));
+    }
+
+    @Test
+    void deduplicateNearestExpiryKeepsDifferentUnderlyings() {
+        LocalDate trade = LocalDate.of(2024, 4, 17);
+        SpotBhavcopyRecord nifty = spotRecord("NIFTY", trade, LocalDate.of(2024, 4, 25));
+        SpotBhavcopyRecord bankNifty = spotRecord("BANKNIFTY", trade, LocalDate.of(2024, 4, 25));
+
+        List<SpotBhavcopyRecord> result = BhavcopyIngestionJob.deduplicateNearestExpiry(
+                List.of(nifty, bankNifty));
+
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void deduplicateNearestExpiryKeepsRecordsWithoutExpiry() {
+        LocalDate trade = LocalDate.of(2024, 4, 17);
+        SpotBhavcopyRecord withExpiry = spotRecord("NIFTY", trade, LocalDate.of(2024, 4, 25));
+        SpotBhavcopyRecord noExpiry = spotRecord("NIFTY", trade, null);
+
+        List<SpotBhavcopyRecord> result = BhavcopyIngestionJob.deduplicateNearestExpiry(
+                List.of(noExpiry, withExpiry));
+
+        assertEquals(2, result.size());
+    }
+
+    private static SpotBhavcopyRecord spotRecord(String underlying, LocalDate tradeDate, LocalDate expiryDate) {
+        return new SpotBhavcopyRecord(1, underlying, tradeDate,
+                BigDecimal.ONE, BigDecimal.TEN, BigDecimal.ONE, BigDecimal.TEN, expiryDate);
     }
 
     private static final class StubBhavcopyCsvReader extends BhavcopyCsvReader {

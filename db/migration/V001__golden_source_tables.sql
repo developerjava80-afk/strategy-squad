@@ -27,8 +27,11 @@ CREATE TABLE options_historical (
     high_price       DOUBLE,
     low_price        DOUBLE,
     close_price      DOUBLE,
+    settle_price     DOUBLE,
     volume           LONG,
-    open_interest    LONG
+    value_in_lakhs   DOUBLE,
+    open_interest    LONG,
+    change_in_oi     LONG
 ) timestamp(trade_ts) PARTITION BY MONTH;
 
 CREATE TABLE options_live (
