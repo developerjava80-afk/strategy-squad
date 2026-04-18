@@ -3,16 +3,21 @@ package com.strategysquad.ingestion.bhavcopy;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Writes normalized Bhavcopy data into instrument and historical tables in batches.
@@ -24,8 +29,9 @@ public class BhavcopyWriter {
     private static final String DEFAULT_INSERT_INSTRUMENT_SQL =
             "INSERT INTO instrument_master"
                     + " (instrument_id, underlying, symbol, expiry_date, strike, option_type,"
+                    + "  lot_size, tick_size, exchange_token, trading_symbol,"
                     + "  is_active, expiry_type, created_at, updated_at)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String DEFAULT_INSERT_OPTIONS_SQL =
             "INSERT INTO options_historical"
                     + " (trade_ts, trade_date, instrument_id, open_price, high_price,"
@@ -91,6 +97,14 @@ public class BhavcopyWriter {
             uniqueByInstrumentId.putIfAbsent(record.instrumentId(), record);
         }
 
+        // Remove instrument IDs that already exist in the database
+        Set<String> existingIds = queryExistingInstrumentIds(connection, uniqueByInstrumentId.keySet());
+        uniqueByInstrumentId.keySet().removeAll(existingIds);
+
+        if (uniqueByInstrumentId.isEmpty()) {
+            return 0;
+        }
+
         Timestamp now = Timestamp.valueOf(java.time.LocalDateTime.now());
         try (PreparedStatement statement = connection.prepareStatement(insertInstrumentSql)) {
             for (BhavcopyRecord record : uniqueByInstrumentId.values()) {
@@ -100,14 +114,46 @@ public class BhavcopyWriter {
                 statement.setTimestamp(4, Timestamp.valueOf(record.expiryDate().atStartOfDay()));
                 statement.setBigDecimal(5, record.strike());
                 statement.setString(6, record.optionType());
-                statement.setBoolean(7, !record.expiryDate().isBefore(record.tradeDate())); // is_active
-                statement.setString(8, deriveExpiryType(record.expiryDate()));               // expiry_type
-                statement.setTimestamp(9, now);                        // created_at
-                statement.setTimestamp(10, now);                       // updated_at
+                statement.setNull(7, Types.INTEGER);                  // lot_size: not available from Bhavcopy
+                statement.setNull(8, Types.DOUBLE);                   // tick_size: not available from Bhavcopy
+                statement.setNull(9, Types.VARCHAR);                  // exchange_token: not available from Bhavcopy
+                statement.setNull(10, Types.VARCHAR);                 // trading_symbol: not available from Bhavcopy
+                statement.setBoolean(11, !record.expiryDate().isBefore(record.tradeDate())); // is_active
+                statement.setString(12, deriveExpiryType(record.expiryDate()));               // expiry_type
+                statement.setTimestamp(13, now);                       // created_at
+                statement.setTimestamp(14, now);                       // updated_at
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());
         }
+    }
+
+    private Set<String> queryExistingInstrumentIds(Connection connection, Collection<String> candidateIds)
+            throws SQLException {
+        if (candidateIds.isEmpty()) {
+            return Set.of();
+        }
+        StringBuilder sql = new StringBuilder(
+                "SELECT DISTINCT instrument_id FROM instrument_master WHERE instrument_id IN (");
+        for (int i = 0; i < candidateIds.size(); i++) {
+            if (i > 0) sql.append(", ");
+            sql.append('?');
+        }
+        sql.append(')');
+
+        Set<String> existing = new HashSet<>();
+        try (PreparedStatement stmt = connection.prepareStatement(sql.toString())) {
+            int idx = 1;
+            for (String id : candidateIds) {
+                stmt.setString(idx++, id);
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    existing.add(rs.getString(1));
+                }
+            }
+        }
+        return existing;
     }
 
     /**

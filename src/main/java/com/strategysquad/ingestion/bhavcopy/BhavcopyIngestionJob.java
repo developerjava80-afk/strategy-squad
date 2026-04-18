@@ -92,22 +92,41 @@ public class BhavcopyIngestionJob {
             }
         }
 
-        BhavcopyWriter.WriteResult writeResult = writer.write(connection, normalized);
-        List<SpotBhavcopyRecord> dedupedSpot = deduplicateNearestExpiry(spotRecords);
-        int spotInserted = spotWriter.write(connection, dedupedSpot);
-        logSummary(csvFile, readResult.totalDataRows(), relevantOptionRows, relevantSpotRows,
-                normalized.size(), dedupedSpot.size(), invalidRows, writeResult, spotInserted);
+        // All three table writes within a single transaction per bhavcopy file
+        boolean autoCommit = connection.getAutoCommit();
+        if (autoCommit) {
+            connection.setAutoCommit(false);
+        }
+        try {
+            BhavcopyWriter.WriteResult writeResult = writer.write(connection, normalized);
+            List<SpotBhavcopyRecord> dedupedSpot = deduplicateNearestExpiry(spotRecords);
+            int spotInserted = spotWriter.write(connection, dedupedSpot);
+            if (autoCommit) {
+                connection.commit();
+            }
+            logSummary(csvFile, readResult.totalDataRows(), relevantOptionRows, relevantSpotRows,
+                    normalized.size(), dedupedSpot.size(), invalidRows, writeResult, spotInserted);
 
-        return new IngestionResult(
-                readResult.totalDataRows(),
-                relevantOptionRows,
-                normalized.size(),
-                invalidRows,
-                writeResult.instrumentsInserted(),
-                writeResult.optionsHistoricalInserted(),
-                relevantSpotRows,
-                spotInserted
-        );
+            return new IngestionResult(
+                    readResult.totalDataRows(),
+                    relevantOptionRows,
+                    normalized.size(),
+                    invalidRows,
+                    writeResult.instrumentsInserted(),
+                    writeResult.optionsHistoricalInserted(),
+                    relevantSpotRows,
+                    spotInserted
+            );
+        } catch (SQLException ex) {
+            if (autoCommit) {
+                connection.rollback();
+            }
+            throw ex;
+        } finally {
+            if (autoCommit) {
+                connection.setAutoCommit(true);
+            }
+        }
     }
 
     /**
