@@ -18,8 +18,14 @@ public class BhavcopyReportSelector {
         Objects.requireNonNull(reports, "reports must not be null");
 
         List<BhavcopyReport> matches = reports.stream()
-                .filter(this::isFnoBhavcopyZip)
+                .filter(this::isPreferredFnoBhavcopyZip)
                 .toList();
+
+        if (matches.isEmpty()) {
+            matches = reports.stream()
+                    .filter(this::isLegacyFnoBhavcopyZip)
+                    .toList();
+        }
 
         if (matches.isEmpty()) {
             throw new BhavcopyArchiveException(
@@ -40,7 +46,17 @@ public class BhavcopyReportSelector {
         return matches.get(0);
     }
 
-    private boolean isFnoBhavcopyZip(BhavcopyReport report) {
+    private boolean isPreferredFnoBhavcopyZip(BhavcopyReport report) {
+        if (report.fileType() != BhavcopyReport.FileType.ZIP) {
+            return false;
+        }
+        String metadata = (report.reportName() + " " + report.fileName() + " " + report.downloadUri())
+                .toUpperCase(Locale.ENGLISH);
+        return metadata.contains("UDIFF COMMON BHAVCOPY")
+                || metadata.contains("BHAVCOPY_NSE_FO");
+    }
+
+    private boolean isLegacyFnoBhavcopyZip(BhavcopyReport report) {
         if (report.fileType() != BhavcopyReport.FileType.ZIP) {
             return false;
         }

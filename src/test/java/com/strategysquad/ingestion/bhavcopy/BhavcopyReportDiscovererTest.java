@@ -48,4 +48,24 @@ class BhavcopyReportDiscovererTest {
 
         assertEquals(BhavcopyArchiveException.Reason.REPORTS_DISCOVERY_FAILED, ex.reason());
     }
+
+    @Test
+    void discoversAvailableReportsForTradeDateFromApiPayload() throws Exception {
+        LocalDate tradeDate = LocalDate.of(2026, 4, 16);
+        String payload = """
+                {"PreviousDay":[
+                  {"displayName":"F&O-Bhavcopy (zip)","fileActlName":"fo.zip","filePath":"https://nsearchives.nseindia.com/content/fo/","tradingDate":"16-Apr-2026"},
+                  {"displayName":"F&O-UDiFF Common Bhavcopy Final (zip)","fileActlName":"BhavCopy_NSE_FO_0_0_0_20260416_F_0000.csv.zip","filePath":"https://nsearchives.nseindia.com/content/fo/","tradingDate":"16-Apr-2026"}
+                ]}
+                """;
+        BhavcopyReportDiscoverer discoverer = new BhavcopyReportDiscoverer(ignored -> payload);
+
+        List<BhavcopyReport> reports = discoverer.discover(tradeDate);
+
+        assertEquals(2, reports.size());
+        assertEquals(
+                URI.create("https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_20260416_F_0000.csv.zip"),
+                reports.get(1).downloadUri()
+        );
+    }
 }

@@ -350,6 +350,46 @@ These are valuable but not required for the initial trading-grade pipeline.
 
 ---
 
+### Historical download workflow
+
+Historical derivatives archives can now be downloaded directly from NSE for a single date or a date range.
+
+- Scope is limited to `NIFTY` and `BANKNIFTY`
+- Stored files are flattened under `data/bhavcopy/historical/derivatives`
+- Date range input uses `dd/MM/yyyy`
+- Saturdays and Sundays are skipped automatically
+- Missing exchange archive dates are skipped without aborting the whole batch
+- Downloaded UDiFF CSVs are filtered to keep only:
+  - `NIFTY` / `BANKNIFTY` option rows
+  - `NIFTY` / `BANKNIFTY` futures rows used as the spot proxy
+
+CLI:
+
+```bash
+java -cp target/classes com.strategysquad.ingestion.bhavcopy.BhavcopyArchiveDownloadCli 01/04/2026 18/04/2026
+```
+
+Example files:
+
+```text
+data/bhavcopy/historical/derivatives/BhavCopy_NSE_FO_0_0_0_20260401_F_0000.csv
+data/bhavcopy/historical/derivatives/BhavCopy_NSE_FO_0_0_0_20260417_F_0000.csv
+```
+
+### Historical DB load status
+
+The repository already contains canonical writers for `instrument_master`, `options_historical`, and `spot_historical`, plus orchestration classes for single-file and directory-based historical ingestion.
+
+Current limitation:
+
+- the historical ingestion normalizers still expect the older Bhavcopy column layout
+- the newly downloaded files are NSE UDiFF bhavcopy CSVs
+- there is no checked-in JDBC/QuestDB historical load CLI yet
+
+Result: downloading is working, but pushing the downloaded UDiFF files into the database through the repo code still requires a UDiFF-to-Golden-Source ingestion adaptation.
+
+---
+
 ### Implementation sequence
 
 - [x] Create `instrument_master` with `expiry_type`

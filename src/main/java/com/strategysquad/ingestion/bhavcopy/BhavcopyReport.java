@@ -26,10 +26,7 @@ public record BhavcopyReport(
 
     static BhavcopyReport fromLink(LocalDate tradeDate, String reportName, URI downloadUri) {
         Objects.requireNonNull(downloadUri, "downloadUri must not be null");
-        String path = downloadUri.getPath();
-        String fileName = path == null || path.isBlank()
-                ? sanitizeReportName(reportName)
-                : Path.of(path).getFileName().toString();
+        String fileName = resolveFileName(reportName, downloadUri);
         return new BhavcopyReport(
                 tradeDate,
                 reportName == null || reportName.isBlank() ? fileName : reportName.trim(),
@@ -37,6 +34,17 @@ public record BhavcopyReport(
                 fileName,
                 FileType.fromFileName(fileName)
         );
+    }
+
+    private static String resolveFileName(String reportName, URI downloadUri) {
+        String path = downloadUri.getPath();
+        if (path != null && !path.isBlank()) {
+            Path fileName = Path.of(path).getFileName();
+            if (fileName != null) {
+                return fileName.toString();
+            }
+        }
+        return sanitizeReportName(reportName);
     }
 
     private static String sanitizeReportName(String reportName) {

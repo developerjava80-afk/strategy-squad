@@ -37,14 +37,15 @@ class BhavcopyArchiveDownloaderTest {
                     writeZip(targetFile, "fo01JUL2024bhav.csv", "A,B\n1,2\n");
                     return 200;
                 },
-                new BhavcopyZipExtractor()
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
         );
 
         BhavcopyArchiveDownloader.DownloadResult result = downloader.download(tradeDate);
 
         assertEquals(tradeDate, result.tradeDate());
         assertEquals(report.downloadUri(), result.archiveUri());
-        assertEquals(tempDir.resolve("derivatives/2024/07/01"), result.storageDirectory());
+        assertEquals(tempDir, result.storageDirectory());
         assertEquals(result.storageDirectory().resolve("fo01JUL2024bhav.csv.zip"), result.zipFile());
         assertEquals(result.storageDirectory().resolve("fo01JUL2024bhav.csv"), result.csvFile());
         assertEquals(report, result.report());
@@ -59,7 +60,8 @@ class BhavcopyArchiveDownloaderTest {
                 new BhavcopyReportDiscoverer(ignored -> ""),
                 new BhavcopyReportSelector(),
                 (archiveUri, targetFile) -> 200,
-                new BhavcopyZipExtractor()
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
         );
 
         BhavcopyArchiveException ex = assertThrows(
@@ -78,7 +80,8 @@ class BhavcopyArchiveDownloaderTest {
                 new BhavcopyReportDiscoverer(ignored -> "<a href=\"/reports/other.csv\">Other report</a>"),
                 new BhavcopyReportSelector(),
                 (archiveUri, targetFile) -> 200,
-                new BhavcopyZipExtractor()
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
         );
 
         BhavcopyArchiveException ex = assertThrows(
@@ -101,7 +104,8 @@ class BhavcopyArchiveDownloaderTest {
                     Files.writeString(targetFile, "not-a-zip");
                     return 200;
                 },
-                new BhavcopyZipExtractor()
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
         );
 
         BhavcopyArchiveException ex = assertThrows(
@@ -110,7 +114,7 @@ class BhavcopyArchiveDownloaderTest {
         );
 
         assertEquals(BhavcopyArchiveException.Reason.EXTRACTION_FAILED, ex.reason());
-        assertTrue(Files.exists(tempDir.resolve("derivatives/2024/07/01/fo01JUL2024bhav.csv.zip")));
+        assertTrue(Files.exists(tempDir.resolve("fo01JUL2024bhav.csv.zip")));
     }
 
     @Test
@@ -123,7 +127,8 @@ class BhavcopyArchiveDownloaderTest {
                         """),
                 new BhavcopyReportSelector(),
                 (archiveUri, targetFile) -> 200,
-                new BhavcopyZipExtractor()
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
         );
 
         BhavcopyArchiveException ex = assertThrows(
@@ -132,6 +137,73 @@ class BhavcopyArchiveDownloaderTest {
         );
 
         assertEquals(BhavcopyArchiveException.Reason.AMBIGUOUS_REPORT_MATCH, ex.reason());
+    }
+
+    @Test
+    void downloadsWeekdaysOnlyAcrossDateRange(@TempDir Path tempDir) throws Exception {
+        class TrackingDownloader extends BhavcopyArchiveDownloader {
+            private final List<LocalDate> downloadedDates = new java.util.ArrayList<>();
+
+            private TrackingDownloader() {
+                super(
+                        tempDir,
+                        new BhavcopyReportDiscoverer(ignored -> """
+                                <a href="https://downloads.example.com/fo01JUL2024bhav.csv.zip">FNO Bhavcopy ZIP</a>
+                                """),
+                        new BhavcopyReportSelector(),
+                        (archiveUri, targetFile) -> {
+                            writeZip(targetFile, "sample.csv", "INSTRUMENT,SYMBOL,OPTION_TYP\nOPTIDX,NIFTY,CE\n");
+                            return 200;
+                        },
+                        new BhavcopyZipExtractor(),
+                        passthroughFilter()
+                );
+            }
+
+            @Override
+            public DownloadResult download(LocalDate tradeDate) throws BhavcopyArchiveException {
+                downloadedDates.add(tradeDate);
+                return super.download(tradeDate);
+            }
+        }
+
+        TrackingDownloader downloader = new TrackingDownloader();
+        List<BhavcopyArchiveDownloader.DownloadResult> results = downloader.downloadRange("16/04/2026", "20/04/2026");
+
+        assertEquals(List.of(
+                LocalDate.of(2026, 4, 16),
+                LocalDate.of(2026, 4, 17),
+                LocalDate.of(2026, 4, 20)
+        ), results.stream().map(BhavcopyArchiveDownloader.DownloadResult::tradeDate).toList());
+    }
+
+    @Test
+    void rejectsStartDateAfterEndDate(@TempDir Path tempDir) {
+        BhavcopyArchiveDownloader downloader = new BhavcopyArchiveDownloader(
+                tempDir,
+                new BhavcopyReportDiscoverer(ignored -> ""),
+                new BhavcopyReportSelector(),
+                (archiveUri, targetFile) -> 200,
+                new BhavcopyZipExtractor(),
+                passthroughFilter()
+        );
+
+        BhavcopyArchiveException ex = assertThrows(
+                BhavcopyArchiveException.class,
+                () -> downloader.downloadRange("20/04/2026", "16/04/2026")
+        );
+
+        assertEquals(BhavcopyArchiveException.Reason.INVALID_DATE, ex.reason());
+        assertEquals("startDate must not be after endDate", ex.getMessage());
+    }
+
+    private static BhavcopyRelevantCsvFilter passthroughFilter() {
+        return new BhavcopyRelevantCsvFilter() {
+            @Override
+            public FilterResult filterInPlace(Path csvFile) {
+                return new FilterResult(0, 0);
+            }
+        };
     }
 
     private static void writeZip(Path zipFile, String entryName, String content) throws IOException {

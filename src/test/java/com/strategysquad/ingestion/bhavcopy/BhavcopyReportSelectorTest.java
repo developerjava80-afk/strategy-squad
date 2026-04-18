@@ -58,4 +58,23 @@ class BhavcopyReportSelectorTest {
 
         assertEquals(BhavcopyArchiveException.Reason.AMBIGUOUS_REPORT_MATCH, ex.reason());
     }
+
+    @Test
+    void prefersUdiffBhavcopyWhenBothLegacyAndUdiffExist() throws Exception {
+        LocalDate tradeDate = LocalDate.of(2024, 7, 1);
+
+        BhavcopyReport selected = selector.selectFnoBhavcopyZip(
+                tradeDate,
+                List.of(
+                        BhavcopyReport.fromLink(tradeDate, "F&O-Bhavcopy (zip)", URI.create("https://example.com/fo.zip")),
+                        BhavcopyReport.fromLink(
+                                tradeDate,
+                                "F&O-UDiFF Common Bhavcopy Final (zip)",
+                                URI.create("https://example.com/BhavCopy_NSE_FO_0_0_0_20240701_F_0000.csv.zip")
+                        )
+                )
+        );
+
+        assertEquals("BhavCopy_NSE_FO_0_0_0_20240701_F_0000.csv.zip", selected.fileName());
+    }
 }
