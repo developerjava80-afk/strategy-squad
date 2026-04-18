@@ -128,6 +128,19 @@
                     <button class="workflow-button" id="clone-scenario-button" type="button">Clone for Comparison</button>
                     <button class="workflow-button" id="refresh-board-button" type="button">Refresh Opportunity Board</button>
                 </div>
+                <div class="workflow-controls">
+                    <label class="workflow-field">
+                        <span>Research collection</span>
+                        <select id="collection-select"></select>
+                    </label>
+                    <label class="workflow-field workflow-field-wide">
+                        <span>Create collection</span>
+                        <div class="workflow-create">
+                            <input id="collection-name-input" type="text" placeholder="e.g. Weekly premium studies">
+                            <button class="workflow-button" id="create-collection-button" type="button">Create Collection</button>
+                        </div>
+                    </label>
+                </div>
                 <p class="workflow-status" id="workflow-status">Current scenario is live in the builder and ready to be saved into the research workspace.</p>
 
                 <div class="workflow-grid">
@@ -261,8 +274,31 @@
                     </article>
                     <article class="context-card emphasis">
                         <span class="context-label">Canonical cohort key</span>
-                        <strong id="cohort-key">NIFTY / CE / WEEKLY / 4 DTE / +100 bucket</strong>
+                        <strong id="cohort-key">NIFTY / CE / TB100 / +100 bucket</strong>
                         <p id="cohort-text">The strategy layer would look up historical observations using the denormalized option context rather than ad hoc UI math.</p>
+                    </article>
+                </div>
+
+                <div class="resolution-grid">
+                    <article class="resolution-card">
+                        <span class="context-label">Canonical time context</span>
+                        <strong id="canonical-time-summary">100 x 15m buckets</strong>
+                        <p id="canonical-time-text">The scenario is converted into the same `time_bucket_15m` context family used by the data platform.</p>
+                    </article>
+                    <article class="resolution-card">
+                        <span class="context-label">Historical cohort</span>
+                        <strong id="cohort-resolution-summary">NIFTY / CE / TB100 / +100</strong>
+                        <p id="cohort-resolution-text">This is the canonical cohort the scenario builder resolves into before any valuation or outcome analytics run.</p>
+                    </article>
+                    <article class="resolution-card">
+                        <span class="context-label">Observation count</span>
+                        <strong id="cohort-observations">312 observations</strong>
+                        <p id="cohort-observations-text">Comparable historical rows found in the resolved cohort.</p>
+                    </article>
+                    <article class="resolution-card emphasis">
+                        <span class="context-label">Cohort quality</span>
+                        <strong id="cohort-strength">Mixed</strong>
+                        <p id="cohort-strength-text">The cohort is usable, but not broad enough to skip context discipline.</p>
                     </article>
                 </div>
             </section>

@@ -291,11 +291,25 @@ textarea {
     gap: 14px;
 }
 
+.resolution-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+
 .context-card {
     padding: 18px;
     border-radius: 18px;
     border: 1px solid rgba(202, 228, 238, 0.1);
     background: rgba(11, 28, 37, 0.85);
+}
+
+.resolution-card {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(202, 228, 238, 0.1);
+    background: rgba(11, 28, 37, 0.82);
 }
 
 .context-card strong {
@@ -304,7 +318,24 @@ textarea {
     font-size: 1.28rem;
 }
 
+.resolution-card strong {
+    display: block;
+    margin: 10px 0 8px;
+    font-size: 1.2rem;
+}
+
+.resolution-card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+}
+
 .context-card.emphasis {
+    border-color: rgba(244, 163, 64, 0.34);
+    background: linear-gradient(155deg, rgba(244, 163, 64, 0.14), rgba(239, 125, 132, 0.07));
+}
+
+.resolution-card.emphasis {
     border-color: rgba(244, 163, 64, 0.34);
     background: linear-gradient(155deg, rgba(244, 163, 64, 0.14), rgba(239, 125, 132, 0.07));
 }
@@ -760,6 +791,35 @@ textarea {
     line-height: 1.6;
 }
 
+.workflow-controls {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.workflow-field {
+    display: grid;
+    gap: 8px;
+}
+
+.workflow-field span {
+    font-size: 0.84rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.workflow-field-wide {
+    align-content: end;
+}
+
+.workflow-create {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+}
+
 .workflow-button {
     border: 1px solid rgba(202, 228, 238, 0.16);
     background: rgba(12, 24, 31, 0.95);
@@ -1034,6 +1094,7 @@ textarea {
     }
 
     .valuation-topline,
+    .resolution-grid,
     .evidence-grid,
     .outcome-topline,
     .horizon-grid,
@@ -1047,7 +1108,8 @@ textarea {
     }
 
     .workflow-grid,
-    .opportunity-columns {
+    .opportunity-columns,
+    .workflow-controls {
         grid-template-columns: 1fr;
     }
 }

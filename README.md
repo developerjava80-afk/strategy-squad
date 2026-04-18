@@ -455,12 +455,38 @@ Delivered sequence:
    - saved studies
    - side-by-side comparison board
    - reloadable prior research
+   - research collections
    - opportunity buckets (`attractive`, `uncertain`, `unattractive`)
-   - browser-local workstation persistence for iterative discovery
+   - DB-backed workstation persistence for iterative discovery
 
 Current implementation note:
-- The Scenario Research console is a polished deterministic prototype aligned to the canonical database model.
-- It is not yet wired to live DB-backed cohort retrieval, forward-outcome retrieval, or server-side persistence.
+- The Scenario Research console is now wired to canonical DB-backed cohort resolution, fair value, forward outcomes, diagnostics, representative cases, and workflow persistence.
+- Saved studies persist canonical historical outputs so scenario review remains reproducible and aligned with the golden-source model.
+- The workstation is still intentionally a research console, not an execution surface. It does not place trades or act like a broker UI.
+
+Research console execution order now implemented:
+
+1. Scenario -> Cohort Resolution
+   - user-defined business inputs resolve into the canonical historical cohort model
+   - cohort key shape: `underlying + option_type + time_bucket_15m + moneyness_bucket`
+2. Fair Value Engine
+   - reads actual historical cohort observations from `options_enriched`
+   - computes distribution, central tendency, percentile bands, and current-price position
+3. Forward Outcome Engine
+   - reads matched historical observations and measures next-day and expiry premium behavior
+   - translates cohort history into long-premium / short-premium / no-clear-edge framing
+4. Diagnostics & Transparency
+   - exposes evidence depth, coverage, concentration, sparsity warnings, and representative comparable cases
+5. Research Workflow Persistence
+   - persists saved scenario studies, collections, and attached historical analysis snapshots in QuestDB-backed workflow tables
+
+Canonical server-backed components:
+- `CanonicalScenarioResolver` resolves UI scenarios into the same cohort vocabulary used by the data platform
+- `FairValueCohortService` backs the valuation layer
+- `ForwardOutcomeCohortService` backs the opportunity layer
+- `DiagnosticsCohortService` backs confidence, warnings, and representative match retrieval
+- `ResearchWorkspaceService` persists collections and saved scenario artifacts
+- `ResearchConsoleServer` serves the UI and exposes the local research APIs
 
 Completed in code:
 

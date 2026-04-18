@@ -1,0 +1,40 @@
+CREATE TABLE research_collections (
+    created_at    TIMESTAMP,
+    collection_id STRING,
+    name          STRING,
+    description   STRING
+) timestamp(created_at) PARTITION BY MONTH;
+
+CREATE TABLE research_scenario_snapshots (
+    saved_at                TIMESTAMP,
+    snapshot_id             STRING,
+    scenario_id             STRING,
+    parent_scenario_id      STRING,
+    collection_id           STRING,
+    title                   STRING,
+    mode                    STRING,
+    underlying              SYMBOL,
+    option_type             SYMBOL,
+    expiry_type             SYMBOL,
+    dte                     INT,
+    spot                    DOUBLE,
+    strike                  DOUBLE,
+    distance_points         DOUBLE,
+    option_price            DOUBLE,
+    activity_bias           STRING,
+    research_note           STRING,
+    time_bucket_15m         INT,
+    moneyness_bucket        INT,
+    cohort_key              STRING,
+    fairness_label          STRING,
+    fairness_percentile     INT,
+    observation_count       LONG,
+    cohort_strength         STRING,
+    opportunity_label       STRING,
+    confidence_level        STRING,
+    recommendation_bucket   STRING,
+    recommendation_text     STRING,
+    fair_value_json         STRING,
+    forward_outcome_json    STRING,
+    diagnostics_json        STRING
+) timestamp(saved_at) PARTITION BY MONTH;
