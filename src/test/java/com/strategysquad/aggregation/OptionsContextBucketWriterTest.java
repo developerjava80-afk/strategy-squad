@@ -41,7 +41,7 @@ class OptionsContextBucketWriterTest {
                 Map.entry(5, 50),
                 Map.entry(6, new BigDecimal("105.25")),
                 Map.entry(7, new BigDecimal("0.00479")),
-                Map.entry(8, new BigDecimal("250")),
+                Map.entry(8, new BigDecimal("250.0")),
                 Map.entry(9, 2L)
         )), statementRecorder.batchParameters());
     }

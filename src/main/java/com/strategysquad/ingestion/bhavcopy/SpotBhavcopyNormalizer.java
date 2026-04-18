@@ -23,14 +23,23 @@ public class SpotBhavcopyNormalizer {
             DateTimeFormatter.ISO_LOCAL_DATE
     );
 
+    private final SpotBhavcopyFilter filter = new SpotBhavcopyFilter();
+
     public SpotBhavcopyRecord normalize(BhavcopyCsvReader.CsvRow row) {
-        String underlying = required(resolveColumn(row, "SYMBOL", "TCKRSYMB"), "SYMBOL");
-        LocalDate tradeDate = parseDate(required(resolveColumn(row, "TIMESTAMP", "TRADDT"), "TIMESTAMP"), "TIMESTAMP");
-        BigDecimal open = parseDecimal(required(resolveColumn(row, "OPEN", "OPNPRIC"), "OPEN"), "OPEN");
-        BigDecimal high = parseDecimal(required(resolveColumn(row, "HIGH", "HGHPRIC"), "HIGH"), "HIGH");
-        BigDecimal low = parseDecimal(required(resolveColumn(row, "LOW", "LWPRIC"), "LOW"), "LOW");
-        BigDecimal close = parseDecimal(required(resolveColumn(row, "CLOSE", "CLSPRIC"), "CLOSE"), "CLOSE");
-        LocalDate expiryDate = parseOptionalDate(row, "EXPIRY_DT", "XPRYDT");
+        String underlying = required(filter.resolveUnderlying(row), "underlying");
+        SpotSource source = filter.classify(row);
+        if (source == null) {
+            throw new IllegalArgumentException("row is not a supported historical spot record");
+        }
+
+        LocalDate tradeDate = parseDate(required(resolveColumn(row, "TIMESTAMP", "TRADDT", "INDEX DATE"), "trade date"), "trade date");
+        BigDecimal open = parseDecimal(required(resolveColumn(row, "OPEN", "OPNPRIC", "OPEN INDEX VALUE"), "open"), "open");
+        BigDecimal high = parseDecimal(required(resolveColumn(row, "HIGH", "HGHPRIC", "HIGH INDEX VALUE"), "high"), "high");
+        BigDecimal low = parseDecimal(required(resolveColumn(row, "LOW", "LWPRIC", "LOW INDEX VALUE"), "low"), "low");
+        BigDecimal close = parseDecimal(required(resolveColumn(row, "CLOSE", "CLSPRIC", "CLOSING INDEX VALUE", "CLOSE INDEX VALUE"), "close"), "close");
+        LocalDate expiryDate = source == SpotSource.DERIVATIVE_PROXY
+                ? parseOptionalDate(row, "EXPIRY_DT", "XPRYDT")
+                : null;
 
         return new SpotBhavcopyRecord(
                 row.lineNumber(),
@@ -40,16 +49,19 @@ public class SpotBhavcopyNormalizer {
                 high,
                 low,
                 close,
+                source,
                 expiryDate
         );
     }
 
-    private static String resolveColumn(BhavcopyCsvReader.CsvRow row, String primary, String fallback) {
-        String value = row.column(primary);
-        if (value != null && !value.trim().isEmpty() && !MISSING_VALUE_MARKER.equals(value.trim())) {
-            return value;
+    private static String resolveColumn(BhavcopyCsvReader.CsvRow row, String... names) {
+        for (String name : names) {
+            String value = row.column(name);
+            if (value != null && !value.trim().isEmpty() && !MISSING_VALUE_MARKER.equals(value.trim())) {
+                return value;
+            }
         }
-        return row.column(fallback);
+        return null;
     }
 
     private String required(String value, String fieldName) {

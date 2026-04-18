@@ -17,6 +17,7 @@ class BhavcopyRelevantCsvFilterTest {
                 INSTRUMENT,SYMBOL,OPTION_TYP
                 OPTIDX,NIFTY,CE
                 OPTIDX,BANKNIFTY,PE
+                ,BANKNIFTY,-
                 FUTIDX,NIFTY,-
                 OPTIDX,RELIANCE,CE
                 FUTIDX,RELIANCE,-
@@ -24,14 +25,15 @@ class BhavcopyRelevantCsvFilterTest {
 
         BhavcopyRelevantCsvFilter.FilterResult result = new BhavcopyRelevantCsvFilter().filterInPlace(csvFile);
 
-        assertEquals(5, result.totalRows());
-        assertEquals(3, result.keptRows());
+        assertEquals(6, result.totalRows());
+        assertEquals(4, result.keptRows());
         assertEquals("""
                 INSTRUMENT,SYMBOL,OPTION_TYP
                 OPTIDX,NIFTY,CE
                 OPTIDX,BANKNIFTY,PE
+                ,BANKNIFTY,-
                 FUTIDX,NIFTY,-
-                """, Files.readString(csvFile));
+                """.replace("\n", System.lineSeparator()), Files.readString(csvFile));
     }
 
     @Test
@@ -55,6 +57,6 @@ class BhavcopyRelevantCsvFilterTest {
                 2026-04-16,IDO,NIFTY,CE,NIFTY26APR24800CE
                 2026-04-16,IDO,BANKNIFTY,PE,BANKNIFTY26APR52000PE
                 2026-04-16,IDF,NIFTY,,NIFTY26APRFUT
-                """, Files.readString(csvFile));
+                """.replace("\n", System.lineSeparator()), Files.readString(csvFile));
     }
 }

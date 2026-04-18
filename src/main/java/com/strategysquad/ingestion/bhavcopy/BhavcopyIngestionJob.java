@@ -6,7 +6,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,7 +69,6 @@ public class BhavcopyIngestionJob {
         int relevantOptionRows = 0;
         int relevantSpotRows = 0;
         for (BhavcopyCsvReader.CsvRow row : readResult.rows()) {
-            // Options path
             if (filter.isRelevant(row)) {
                 relevantOptionRows++;
                 try {
@@ -81,7 +79,6 @@ public class BhavcopyIngestionJob {
                     invalidRows.add(new InvalidRow(row.lineNumber(), ex.getMessage(), row.rawLine()));
                 }
             }
-            // Spot path
             if (spotFilter.isRelevant(row)) {
                 relevantSpotRows++;
                 try {
@@ -92,14 +89,13 @@ public class BhavcopyIngestionJob {
             }
         }
 
-        // All three table writes within a single transaction per bhavcopy file
         boolean autoCommit = connection.getAutoCommit();
         if (autoCommit) {
             connection.setAutoCommit(false);
         }
         try {
             BhavcopyWriter.WriteResult writeResult = writer.write(connection, normalized);
-            List<SpotBhavcopyRecord> dedupedSpot = deduplicateNearestExpiry(spotRecords);
+            List<SpotBhavcopyRecord> dedupedSpot = deduplicatePreferredSpot(spotRecords);
             int spotInserted = spotWriter.write(connection, dedupedSpot);
             if (autoCommit) {
                 connection.commit();
@@ -129,46 +125,50 @@ public class BhavcopyIngestionJob {
         }
     }
 
-    /**
-     * Selects at most one spot record per (underlying, tradeDate) by picking
-     * the FUTIDX row with the nearest expiry that is on or after the trade date.
-     * Records without an expiry date (e.g. from index-level Bhavcopy) are kept
-     * unconditionally.
-     */
-    static List<SpotBhavcopyRecord> deduplicateNearestExpiry(List<SpotBhavcopyRecord> records) {
+    static List<SpotBhavcopyRecord> deduplicatePreferredSpot(List<SpotBhavcopyRecord> records) {
         if (records.size() <= 1) {
             return records;
         }
-        // Key: underlying + tradeDate
         Map<String, SpotBhavcopyRecord> best = new LinkedHashMap<>();
-        List<SpotBhavcopyRecord> noExpiry = new ArrayList<>();
 
         for (SpotBhavcopyRecord record : records) {
-            if (record.expiryDate() == null) {
-                noExpiry.add(record);
-                continue;
-            }
             String key = record.underlying() + "|" + record.tradeDate();
             SpotBhavcopyRecord existing = best.get(key);
             if (existing == null) {
                 best.put(key, record);
             } else {
-                // Pick the record whose expiry is nearest to (but >= ) tradeDate
-                best.put(key, pickNearest(record, existing));
+                best.put(key, pickPreferred(record, existing));
             }
         }
-        List<SpotBhavcopyRecord> result = new ArrayList<>(noExpiry);
-        result.addAll(best.values());
-        return result;
+        return new ArrayList<>(best.values());
     }
 
-    private static SpotBhavcopyRecord pickNearest(SpotBhavcopyRecord a, SpotBhavcopyRecord b) {
+    private static SpotBhavcopyRecord pickPreferred(SpotBhavcopyRecord a, SpotBhavcopyRecord b) {
+        if (a.source() != b.source()) {
+            return a.source() == SpotSource.TRUE_SPOT ? a : b;
+        }
+        if (a.source() == SpotSource.TRUE_SPOT) {
+            return a.lineNumber() <= b.lineNumber() ? a : b;
+        }
+        return pickNearestProxy(a, b);
+    }
+
+    private static SpotBhavcopyRecord pickNearestProxy(SpotBhavcopyRecord a, SpotBhavcopyRecord b) {
         LocalDate trade = a.tradeDate();
-        boolean aValid = !a.expiryDate().isBefore(trade);
-        boolean bValid = !b.expiryDate().isBefore(trade);
-        if (aValid && !bValid) return a;
-        if (!aValid && bValid) return b;
-        // Both valid or both expired — pick the one with the earlier expiry (nearest)
+        boolean aValid = a.expiryDate() != null && !a.expiryDate().isBefore(trade);
+        boolean bValid = b.expiryDate() != null && !b.expiryDate().isBefore(trade);
+        if (aValid && !bValid) {
+            return a;
+        }
+        if (!aValid && bValid) {
+            return b;
+        }
+        if (a.expiryDate() == null) {
+            return b;
+        }
+        if (b.expiryDate() == null) {
+            return a;
+        }
         return a.expiryDate().compareTo(b.expiryDate()) <= 0 ? a : b;
     }
 

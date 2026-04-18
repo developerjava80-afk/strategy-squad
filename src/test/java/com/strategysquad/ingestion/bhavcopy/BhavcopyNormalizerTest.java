@@ -146,7 +146,7 @@ class BhavcopyNormalizerTest {
                 Map.entry("TTLTRADGVOL", "358"),
                 Map.entry("TTLTRFVAL", "664973079.00"),
                 Map.entry("OPNINTRST", "4560"),
-                Map.entry("CHGNINOPNINTRST", "2940"),
+                Map.entry("CHNGINOPNINTRST", "2940"),
                 Map.entry("NEWBRDLOTQTY", "30")
         ));
     }

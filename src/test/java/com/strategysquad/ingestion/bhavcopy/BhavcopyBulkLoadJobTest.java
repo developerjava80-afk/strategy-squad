@@ -101,6 +101,21 @@ class BhavcopyBulkLoadJobTest {
     }
 
     @Test
+    void loadsNestedCsvFilesRecursively() throws Exception {
+        Path nested = Files.createDirectories(tempDir.resolve("indices"));
+        Files.writeString(nested.resolve("index_20240417.csv"), "H\nR");
+
+        RecordingIngestionJob recorder = new RecordingIngestionJob();
+        BhavcopyBulkLoadJob bulkJob = new BhavcopyBulkLoadJob(recorder);
+
+        BhavcopyBulkLoadJob.BulkLoadResult result = bulkJob.loadDirectory(
+                tempDir, new BhavcopyJdbcTestSupport.ConnectionRecorder(true).proxy());
+
+        assertEquals(1, result.totalFiles());
+        assertEquals("index_20240417.csv", recorder.processedFiles.get(0).getFileName().toString());
+    }
+
+    @Test
     void rejectsNonDirectory() {
         Path file = tempDir.resolve("notadir.csv");
         assertThrows(IOException.class, () ->

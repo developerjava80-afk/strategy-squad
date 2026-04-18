@@ -2,6 +2,7 @@ package com.strategysquad.enrichment;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,6 +35,10 @@ final class EnrichmentJdbcTestSupport {
             InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
                 case "setTimestamp", "setString", "setBigDecimal", "setInt", "setLong" -> {
                     currentParameters.put((Integer) args[0], args[1]);
+                    yield null;
+                }
+                case "setDouble" -> {
+                    currentParameters.put((Integer) args[0], BigDecimal.valueOf((Double) args[1]));
                     yield null;
                 }
                 case "addBatch" -> {

@@ -16,8 +16,8 @@ public class OptionsEnrichedWriter {
             "INSERT INTO options_enriched"
                     + " (exchange_ts, instrument_id, underlying, option_type, strike,"
                     + "  expiry_date, last_price, underlying_price, minutes_to_expiry,"
-                + "  time_bucket_15m, moneyness_pct, moneyness_points, moneyness_bucket)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "  time_bucket_15m, moneyness_pct, moneyness_points, moneyness_bucket, volume)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private final String insertSql;
 
@@ -50,6 +50,7 @@ public class OptionsEnrichedWriter {
                 statement.setDouble(11, tick.moneynessPct().doubleValue());
                 statement.setDouble(12, tick.moneynessPoints().doubleValue());
                 statement.setInt(13, tick.moneynessBucket());
+                statement.setLong(14, tick.volume());
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

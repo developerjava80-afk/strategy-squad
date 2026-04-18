@@ -23,10 +23,14 @@ import java.util.Objects;
  */
 public class BhavcopyArchiveDownloader {
     private static final Path DEFAULT_STORAGE_ROOT = Path.of("data", "bhavcopy", "historical", "derivatives");
+    private static final LocalDate UDIFF_ARCHIVE_START_DATE = LocalDate.of(2024, 1, 1);
     private static final DateTimeFormatter USER_DATE_FORMATTER =
             DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.ENGLISH);
     private static final DateTimeFormatter ARCHIVE_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final DateTimeFormatter LEGACY_ARCHIVE_MONTH_FORMATTER = DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH);
+    private static final DateTimeFormatter LEGACY_ARCHIVE_DAY_FORMATTER = DateTimeFormatter.ofPattern("dd", Locale.ENGLISH);
     private static final URI DIRECT_ARCHIVE_BASE_URI = URI.create("https://nsearchives.nseindia.com/content/fo/");
+    private static final URI LEGACY_DIRECT_ARCHIVE_BASE_URI = URI.create("https://nsearchives.nseindia.com/content/historical/DERIVATIVES/");
 
     private final Path storageRoot;
     private final BhavcopyReportDiscoverer reportDiscoverer;
@@ -136,7 +140,8 @@ public class BhavcopyArchiveDownloader {
         try {
             return reportSelector.selectFnoBhavcopyZip(tradeDate, reportDiscoverer.discover(tradeDate));
         } catch (BhavcopyArchiveException ex) {
-            if (ex.reason() != BhavcopyArchiveException.Reason.FNO_BHAVCOPY_REPORT_NOT_FOUND) {
+            if (ex.reason() != BhavcopyArchiveException.Reason.FNO_BHAVCOPY_REPORT_NOT_FOUND
+                    && ex.reason() != BhavcopyArchiveException.Reason.REPORTS_DISCOVERY_FAILED) {
                 throw ex;
             }
             return directArchiveReport(tradeDate);
@@ -144,11 +149,27 @@ public class BhavcopyArchiveDownloader {
     }
 
     private BhavcopyReport directArchiveReport(LocalDate tradeDate) {
+        if (tradeDate.isBefore(UDIFF_ARCHIVE_START_DATE)) {
+            return legacyDirectArchiveReport(tradeDate);
+        }
+
         String fileName = "BhavCopy_NSE_FO_0_0_0_" + tradeDate.format(ARCHIVE_DATE_FORMATTER) + "_F_0000.csv.zip";
         return BhavcopyReport.fromLink(
                 tradeDate,
                 "F&O-UDiFF Common Bhavcopy Final (zip)",
                 DIRECT_ARCHIVE_BASE_URI.resolve(fileName)
+        );
+    }
+
+    private BhavcopyReport legacyDirectArchiveReport(LocalDate tradeDate) {
+        String year = Integer.toString(tradeDate.getYear());
+        String month = tradeDate.format(LEGACY_ARCHIVE_MONTH_FORMATTER).toUpperCase(Locale.ENGLISH);
+        String fileName = "fo" + tradeDate.format(LEGACY_ARCHIVE_DAY_FORMATTER) + month + year + "bhav.csv.zip";
+        URI archiveUri = LEGACY_DIRECT_ARCHIVE_BASE_URI.resolve(year + "/" + month + "/" + fileName);
+        return BhavcopyReport.fromLink(
+                tradeDate,
+                "F&O Bhavcopy (legacy zip)",
+                archiveUri
         );
     }
 

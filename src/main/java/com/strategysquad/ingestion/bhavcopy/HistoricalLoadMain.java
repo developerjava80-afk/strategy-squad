@@ -12,8 +12,8 @@ import java.util.logging.Logger;
  *
  * <p>Usage: {@code java com.strategysquad.ingestion.bhavcopy.HistoricalLoadMain [directory] [jdbc-url]}
  * <ul>
- *   <li>{@code directory} — path to folder containing CSV files
- *       (default: {@code data/bhavcopy/historical/derivatives})</li>
+ *   <li>{@code directory} — path to folder containing historical CSV files
+ *       (default: {@code data/bhavcopy/historical})</li>
  *   <li>{@code jdbc-url} — JDBC connection URL
  *       (default: {@code jdbc:postgresql://localhost:8812/qdb})</li>
  * </ul>
@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 public class HistoricalLoadMain {
     private static final Logger LOGGER = Logger.getLogger(HistoricalLoadMain.class.getName());
 
-    private static final String DEFAULT_DIR = "data/bhavcopy/historical/derivatives";
+    private static final String DEFAULT_DIR = "data/bhavcopy/historical";
     private static final String DEFAULT_JDBC_URL = "jdbc:postgresql://localhost:8812/qdb";
     private static final String DEFAULT_USER = "admin";
     private static final String DEFAULT_PASSWORD = "quest";

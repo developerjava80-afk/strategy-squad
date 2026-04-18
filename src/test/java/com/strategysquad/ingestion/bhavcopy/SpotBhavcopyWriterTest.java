@@ -31,6 +31,7 @@ class SpotBhavcopyWriterTest {
                 new BigDecimal("48510.25"),
                 new BigDecimal("48090.75"),
                 new BigDecimal("48455.40"),
+                SpotSource.TRUE_SPOT,
                 null
         );
 
@@ -41,10 +42,10 @@ class SpotBhavcopyWriterTest {
                 1, Timestamp.valueOf(record.tradeDate().atTime(15, 30)),
                 2, Date.valueOf(record.tradeDate()),
                 3, "BANKNIFTY",
-                4, new BigDecimal("48200.10"),
+                4, new BigDecimal("48200.1"),
                 5, new BigDecimal("48510.25"),
                 6, new BigDecimal("48090.75"),
-                7, new BigDecimal("48455.40")
+                7, new BigDecimal("48455.4")
         )), statementRecorder.batchParameters());
     }
 
@@ -64,6 +65,7 @@ class SpotBhavcopyWriterTest {
                 new BigDecimal("48510.25"),
                 new BigDecimal("48090.75"),
                 new BigDecimal("48455.40"),
+                SpotSource.TRUE_SPOT,
                 null
         );
 

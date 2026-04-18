@@ -2,6 +2,7 @@ package com.strategysquad.ingestion.bhavcopy;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -27,8 +28,12 @@ final class BhavcopyJdbcTestSupport {
 
         PreparedStatement proxy() {
             InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
-                case "setTimestamp", "setDate", "setString", "setBigDecimal", "setLong", "setBoolean", "setInt", "setDouble" -> {
+                case "setTimestamp", "setDate", "setString", "setBigDecimal", "setLong", "setBoolean", "setInt" -> {
                     currentParameters.put((Integer) args[0], args[1]);
+                    yield null;
+                }
+                case "setDouble" -> {
+                    currentParameters.put((Integer) args[0], BigDecimal.valueOf((Double) args[1]));
                     yield null;
                 }
                 case "setNull" -> {

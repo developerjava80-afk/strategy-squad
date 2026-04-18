@@ -17,9 +17,15 @@ class InstrumentResolverTest {
         String id = resolver.resolveInstrumentId(key);
 
         assertNotNull(id);
-        assertTrue(id.startsWith("INS_"));
+        assertEquals("INS_NIFTY_20240328_22000_CE", id);
         // Deterministic: same key must always produce same ID
         assertEquals(id, resolver.resolveInstrumentId(key));
+    }
+
+    @Test
+    void encodesDecimalStrikeInReadableId() {
+        InstrumentKey key = new InstrumentKey("BANKNIFTY", LocalDate.of(2026, 4, 28), new BigDecimal("61900.50"), "PE");
+        assertEquals("INS_BANKNIFTY_20260428_61900P5_PE", resolver.resolveInstrumentId(key));
     }
 
     @Test

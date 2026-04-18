@@ -83,7 +83,7 @@ class BhavcopyWriterTest {
         expectedInstrument.put(2, "NIFTY");
         expectedInstrument.put(3, "NIFTY");
         expectedInstrument.put(4, Timestamp.valueOf(record.expiryDate().atStartOfDay()));
-        expectedInstrument.put(5, new BigDecimal("22500"));
+        expectedInstrument.put(5, new BigDecimal("22500.0"));
         expectedInstrument.put(6, "CE");
         expectedInstrument.put(7, null);  // lot_size
         expectedInstrument.put(8, null);  // tick_size
@@ -99,11 +99,11 @@ class BhavcopyWriterTest {
                 Map.entry(1, Timestamp.valueOf(record.tradeDate().atTime(15, 30))),
                 Map.entry(2, Date.valueOf(record.tradeDate())),
                 Map.entry(3, "INS_123"),
-                Map.entry(4, new BigDecimal("110.50")),
-                Map.entry(5, new BigDecimal("125.00")),
+                Map.entry(4, new BigDecimal("110.5")),
+                Map.entry(5, new BigDecimal("125.0")),
                 Map.entry(6, new BigDecimal("105.25")),
                 Map.entry(7, new BigDecimal("120.75")),
-                Map.entry(8, new BigDecimal("119.50")),
+                Map.entry(8, new BigDecimal("119.5")),
                 Map.entry(9, 150L),
                 Map.entry(10, new BigDecimal("1234.56")),
                 Map.entry(11, 2000L),

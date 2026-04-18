@@ -10,7 +10,6 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,14 +33,16 @@ public class BhavcopyWriter {
     private static final String DEFAULT_INSERT_OPTIONS_SQL =
             "INSERT INTO options_historical"
                     + " (trade_ts, trade_date, instrument_id, open_price, high_price,"
-                + "  low_price, close_price, volume, open_interest)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "  low_price, close_price, settle_price, volume, value_in_lakhs,"
+                    + "  open_interest, change_in_oi)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /** Market close time used to normalize trade_date into trade_ts (IST 15:30). */
     private static final LocalTime MARKET_CLOSE_IST = LocalTime.of(15, 30);
 
     private final String insertInstrumentSql;
     private final String insertOptionsSql;
+    private Set<String> knownInstrumentIds;
 
     public BhavcopyWriter() {
         this(DEFAULT_INSERT_INSTRUMENT_SQL, DEFAULT_INSERT_OPTIONS_SQL);
@@ -85,9 +86,8 @@ public class BhavcopyWriter {
             uniqueByInstrumentId.putIfAbsent(record.instrumentId(), record);
         }
 
-        // Remove instrument IDs that already exist in the database
-        Set<String> existingIds = queryExistingInstrumentIds(connection, uniqueByInstrumentId.keySet());
-        uniqueByInstrumentId.keySet().removeAll(existingIds);
+        Set<String> cachedIds = knownInstrumentIds(connection);
+        uniqueByInstrumentId.keySet().removeIf(cachedIds::contains);
 
         if (uniqueByInstrumentId.isEmpty()) {
             return 0;
@@ -124,36 +124,26 @@ public class BhavcopyWriter {
                 statement.setTimestamp(14, now);                       // updated_at
                 statement.addBatch();
             }
-            return successfulBatchCount(statement.executeBatch());
+            int inserted = successfulBatchCount(statement.executeBatch());
+            cachedIds.addAll(uniqueByInstrumentId.keySet());
+            return inserted;
         }
     }
 
-    private Set<String> queryExistingInstrumentIds(Connection connection, Collection<String> candidateIds)
-            throws SQLException {
-        if (candidateIds.isEmpty()) {
-            return Set.of();
+    private Set<String> knownInstrumentIds(Connection connection) throws SQLException {
+        if (knownInstrumentIds != null) {
+            return knownInstrumentIds;
         }
-        StringBuilder sql = new StringBuilder(
-                "SELECT DISTINCT instrument_id FROM instrument_master WHERE instrument_id IN (");
-        for (int i = 0; i < candidateIds.size(); i++) {
-            if (i > 0) sql.append(", ");
-            sql.append('?');
-        }
-        sql.append(')');
 
         Set<String> existing = new HashSet<>();
-        try (PreparedStatement stmt = connection.prepareStatement(sql.toString())) {
-            int idx = 1;
-            for (String id : candidateIds) {
-                stmt.setString(idx++, id);
-            }
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    existing.add(rs.getString(1));
-                }
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT instrument_id FROM instrument_master");
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                existing.add(rs.getString(1));
             }
         }
-        return existing;
+        knownInstrumentIds = existing;
+        return knownInstrumentIds;
     }
 
     /**
@@ -181,8 +171,11 @@ public class BhavcopyWriter {
                 statement.setDouble(5, record.high().doubleValue());         // high_price
                 statement.setDouble(6, record.low().doubleValue());          // low_price
                 statement.setDouble(7, record.close().doubleValue());        // close_price
-                statement.setLong(8, record.contracts());                    // volume (contracts from Bhavcopy)
-                statement.setLong(9, record.openInterest());                 // open_interest
+                statement.setDouble(8, record.settlePrice().doubleValue());  // settle_price
+                statement.setLong(9, record.contracts());                    // volume (contracts from Bhavcopy)
+                statement.setDouble(10, record.valueInLakhs().doubleValue());// value_in_lakhs
+                statement.setLong(11, record.openInterest());                // open_interest
+                statement.setLong(12, record.changeInOi());                  // change_in_oi
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

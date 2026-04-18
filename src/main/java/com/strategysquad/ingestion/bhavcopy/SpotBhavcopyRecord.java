@@ -19,6 +19,7 @@ public record SpotBhavcopyRecord(
         BigDecimal high,
         BigDecimal low,
         BigDecimal close,
+        SpotSource source,
         LocalDate expiryDate
 ) {
     public SpotBhavcopyRecord {
@@ -28,6 +29,7 @@ public record SpotBhavcopyRecord(
         Objects.requireNonNull(high, "high must not be null");
         Objects.requireNonNull(low, "low must not be null");
         Objects.requireNonNull(close, "close must not be null");
+        Objects.requireNonNull(source, "source must not be null");
         // expiryDate may be null for index-level Bhavcopy files
     }
 }

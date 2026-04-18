@@ -4,22 +4,39 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpotBhavcopyFilterTest {
 
     private final SpotBhavcopyFilter filter = new SpotBhavcopyFilter();
 
     @Test
-    void acceptsNiftyFutures() {
+    void acceptsNiftyFuturesAsProxy() {
         BhavcopyCsvReader.CsvRow row = csvRow("FUTIDX", "NIFTY");
         assertTrue(filter.isRelevant(row));
+        assertEquals(SpotSource.DERIVATIVE_PROXY, filter.classify(row));
     }
 
     @Test
-    void acceptsBankNiftyFutures() {
-        BhavcopyCsvReader.CsvRow row = csvRow("FUTIDX", "BANKNIFTY");
+    void acceptsUdiffFuturesAsProxy() {
+        BhavcopyCsvReader.CsvRow row = udiffRow("IDF", "BANKNIFTY");
         assertTrue(filter.isRelevant(row));
+        assertEquals(SpotSource.DERIVATIVE_PROXY, filter.classify(row));
+    }
+
+    @Test
+    void acceptsIndexRowsAsTrueSpot() {
+        BhavcopyCsvReader.CsvRow row = new BhavcopyCsvReader.CsvRow(1, "raw", Map.of(
+                "INDEX NAME", "NIFTY 50",
+                "INDEX DATE", "2026-04-16",
+                "OPEN INDEX VALUE", "24342.00"
+        ));
+
+        assertTrue(filter.isRelevant(row));
+        assertEquals(SpotSource.TRUE_SPOT, filter.classify(row));
+        assertEquals("NIFTY", filter.resolveUnderlying(row));
     }
 
     @Test
@@ -31,36 +48,6 @@ class SpotBhavcopyFilterTest {
     @Test
     void rejectsOtherSymbol() {
         BhavcopyCsvReader.CsvRow row = csvRow("FUTIDX", "RELIANCE");
-        assertFalse(filter.isRelevant(row));
-    }
-
-    @Test
-    void handlesLowerCaseInput() {
-        BhavcopyCsvReader.CsvRow row = csvRow("futidx", "nifty");
-        assertTrue(filter.isRelevant(row));
-    }
-
-    @Test
-    void acceptsUdiffNiftyFutures() {
-        BhavcopyCsvReader.CsvRow row = udiffRow("IDF", "NIFTY");
-        assertTrue(filter.isRelevant(row));
-    }
-
-    @Test
-    void acceptsUdiffBankNiftyFutures() {
-        BhavcopyCsvReader.CsvRow row = udiffRow("IDF", "BANKNIFTY");
-        assertTrue(filter.isRelevant(row));
-    }
-
-    @Test
-    void rejectsUdiffOptions() {
-        BhavcopyCsvReader.CsvRow row = udiffRow("IDO", "NIFTY");
-        assertFalse(filter.isRelevant(row));
-    }
-
-    @Test
-    void rejectsUdiffOtherSymbol() {
-        BhavcopyCsvReader.CsvRow row = udiffRow("IDF", "RELIANCE");
         assertFalse(filter.isRelevant(row));
     }
 

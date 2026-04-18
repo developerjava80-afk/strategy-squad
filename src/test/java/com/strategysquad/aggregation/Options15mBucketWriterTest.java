@@ -41,8 +41,8 @@ class Options15mBucketWriterTest {
                 Map.entry(3, "INS_123"),
                 Map.entry(4, 6),
                 Map.entry(5, new BigDecimal("105.25")),
-                Map.entry(6, new BigDecimal("100.00")),
-                Map.entry(7, new BigDecimal("110.50")),
+                Map.entry(6, new BigDecimal("100.0")),
+                Map.entry(7, new BigDecimal("110.5")),
                 Map.entry(8, 500L),
                 Map.entry(9, 2L)
         )), statementRecorder.batchParameters());

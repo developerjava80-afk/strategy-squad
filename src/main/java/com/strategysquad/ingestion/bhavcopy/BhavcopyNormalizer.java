@@ -136,8 +136,9 @@ public class BhavcopyNormalizer {
 
     private long parseLong(String value, String fieldName) {
         try {
-            return Long.parseLong(value.replace(",", "").trim());
-        } catch (NumberFormatException ex) {
+            BigDecimal numericValue = new BigDecimal(value.replace(",", "").trim()).stripTrailingZeros();
+            return numericValue.longValueExact();
+        } catch (ArithmeticException | NumberFormatException ex) {
             throw new IllegalArgumentException(fieldName + " is not a valid long: " + value, ex);
         }
     }

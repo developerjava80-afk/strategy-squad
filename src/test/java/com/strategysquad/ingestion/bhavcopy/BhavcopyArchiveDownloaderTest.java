@@ -89,7 +89,7 @@ class BhavcopyArchiveDownloaderTest {
                 () -> downloader.download(LocalDate.of(2024, 7, 1))
         );
 
-        assertEquals(BhavcopyArchiveException.Reason.FNO_BHAVCOPY_REPORT_NOT_FOUND, ex.reason());
+        assertEquals(BhavcopyArchiveException.Reason.EXTRACTION_FAILED, ex.reason());
     }
 
     @Test
@@ -168,12 +168,14 @@ class BhavcopyArchiveDownloaderTest {
         }
 
         TrackingDownloader downloader = new TrackingDownloader();
-        List<BhavcopyArchiveDownloader.DownloadResult> results = downloader.downloadRange("16/04/2026", "20/04/2026");
+        List<BhavcopyArchiveDownloader.DownloadResult> results = downloader.downloadRange("16/04/2024", "22/04/2024");
 
         assertEquals(List.of(
-                LocalDate.of(2026, 4, 16),
-                LocalDate.of(2026, 4, 17),
-                LocalDate.of(2026, 4, 20)
+                LocalDate.of(2024, 4, 16),
+                LocalDate.of(2024, 4, 17),
+                LocalDate.of(2024, 4, 18),
+                LocalDate.of(2024, 4, 19),
+                LocalDate.of(2024, 4, 22)
         ), results.stream().map(BhavcopyArchiveDownloader.DownloadResult::tradeDate).toList());
     }
 
@@ -190,7 +192,7 @@ class BhavcopyArchiveDownloaderTest {
 
         BhavcopyArchiveException ex = assertThrows(
                 BhavcopyArchiveException.class,
-                () -> downloader.downloadRange("20/04/2026", "16/04/2026")
+                () -> downloader.downloadRange("20/04/2024", "16/04/2024")
         );
 
         assertEquals(BhavcopyArchiveException.Reason.INVALID_DATE, ex.reason());
