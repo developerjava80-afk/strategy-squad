@@ -15,10 +15,13 @@ class SpotBhavcopyWriterTest {
 
     @Test
     void writesCanonicalHistoricalColumns() throws Exception {
+        BhavcopyJdbcTestSupport.QueryStatementRecorder queryRecorder =
+                new BhavcopyJdbcTestSupport.QueryStatementRecorder(List.of());
         BhavcopyJdbcTestSupport.PreparedStatementRecorder statementRecorder =
                 new BhavcopyJdbcTestSupport.PreparedStatementRecorder(new int[]{1});
         BhavcopyJdbcTestSupport.ConnectionRecorder connectionRecorder =
-                new BhavcopyJdbcTestSupport.ConnectionRecorder(true, statementRecorder.proxy());
+                new BhavcopyJdbcTestSupport.ConnectionRecorder(true,
+                        queryRecorder.proxy(), statementRecorder.proxy());
 
         SpotBhavcopyRecord record = new SpotBhavcopyRecord(
                 4,
@@ -43,5 +46,29 @@ class SpotBhavcopyWriterTest {
                 6, new BigDecimal("48090.75"),
                 7, new BigDecimal("48455.40")
         )), statementRecorder.batchParameters());
+    }
+
+    @Test
+    void skipsSpotInsertWhenAlreadyExists() throws Exception {
+        // Query returns BANKNIFTY as already existing for this trade_date
+        BhavcopyJdbcTestSupport.QueryStatementRecorder queryRecorder =
+                new BhavcopyJdbcTestSupport.QueryStatementRecorder(List.of(List.of("BANKNIFTY")));
+        BhavcopyJdbcTestSupport.ConnectionRecorder connectionRecorder =
+                new BhavcopyJdbcTestSupport.ConnectionRecorder(true, queryRecorder.proxy());
+
+        SpotBhavcopyRecord record = new SpotBhavcopyRecord(
+                4,
+                "BANKNIFTY",
+                LocalDate.of(2024, 4, 17),
+                new BigDecimal("48200.10"),
+                new BigDecimal("48510.25"),
+                new BigDecimal("48090.75"),
+                new BigDecimal("48455.40"),
+                null
+        );
+
+        int inserted = new SpotBhavcopyWriter().write(connectionRecorder.proxy(), List.of(record));
+
+        assertEquals(0, inserted);
     }
 }

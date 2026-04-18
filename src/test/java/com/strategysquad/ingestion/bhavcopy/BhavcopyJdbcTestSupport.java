@@ -4,6 +4,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,8 +27,12 @@ final class BhavcopyJdbcTestSupport {
 
         PreparedStatement proxy() {
             InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
-                case "setTimestamp", "setDate", "setString", "setBigDecimal", "setLong", "setBoolean" -> {
+                case "setTimestamp", "setDate", "setString", "setBigDecimal", "setLong", "setBoolean", "setInt", "setDouble" -> {
                     currentParameters.put((Integer) args[0], args[1]);
+                    yield null;
+                }
+                case "setNull" -> {
+                    currentParameters.put((Integer) args[0], null);
                     yield null;
                 }
                 case "addBatch" -> {
@@ -120,6 +125,76 @@ final class BhavcopyJdbcTestSupport {
 
         List<String> events() {
             return events;
+        }
+    }
+
+    /**
+     * Proxy for a PreparedStatement used in SELECT queries.
+     * Returns a configurable ResultSet on {@code executeQuery()}.
+     */
+    static final class QueryStatementRecorder {
+        private final List<List<Object>> resultRows;
+        private final Map<Integer, Object> currentParameters = new LinkedHashMap<>();
+        private boolean closed;
+
+        /**
+         * @param resultRows rows to return from the ResultSet. Each inner list
+         *                   represents one row; column values are accessed by
+         *                   1-based index.
+         */
+        QueryStatementRecorder(List<List<Object>> resultRows) {
+            this.resultRows = resultRows;
+        }
+
+        PreparedStatement proxy() {
+            InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
+                case "setString", "setDate", "setTimestamp", "setInt", "setLong" -> {
+                    currentParameters.put((Integer) args[0], args[1]);
+                    yield null;
+                }
+                case "executeQuery" -> resultSetProxy();
+                case "clearParameters" -> {
+                    currentParameters.clear();
+                    yield null;
+                }
+                case "close" -> {
+                    closed = true;
+                    yield null;
+                }
+                case "isClosed" -> closed;
+                default -> defaultValue(method.getReturnType());
+            };
+            return (PreparedStatement) Proxy.newProxyInstance(
+                    PreparedStatement.class.getClassLoader(),
+                    new Class<?>[]{PreparedStatement.class},
+                    handler
+            );
+        }
+
+        private ResultSet resultSetProxy() {
+            int[] cursor = {-1};
+            InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
+                case "next" -> {
+                    cursor[0]++;
+                    yield cursor[0] < resultRows.size();
+                }
+                case "getString" -> {
+                    int col = (Integer) args[0];
+                    yield resultRows.get(cursor[0]).get(col - 1);
+                }
+                case "getDate" -> {
+                    int col = (Integer) args[0];
+                    yield resultRows.get(cursor[0]).get(col - 1);
+                }
+                case "close" -> null;
+                case "isClosed" -> false;
+                default -> defaultValue(method.getReturnType());
+            };
+            return (ResultSet) Proxy.newProxyInstance(
+                    ResultSet.class.getClassLoader(),
+                    new Class<?>[]{ResultSet.class},
+                    handler
+            );
         }
     }
 
