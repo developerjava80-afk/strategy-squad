@@ -24,13 +24,13 @@ public class SpotBhavcopyNormalizer {
     );
 
     public SpotBhavcopyRecord normalize(BhavcopyCsvReader.CsvRow row) {
-        String underlying = required(row, "SYMBOL");
-        LocalDate tradeDate = parseDate(required(row, "TIMESTAMP"), "TIMESTAMP");
-        BigDecimal open = parseDecimal(required(row, "OPEN"), "OPEN");
-        BigDecimal high = parseDecimal(required(row, "HIGH"), "HIGH");
-        BigDecimal low = parseDecimal(required(row, "LOW"), "LOW");
-        BigDecimal close = parseDecimal(required(row, "CLOSE"), "CLOSE");
-        LocalDate expiryDate = parseOptionalDate(row, "EXPIRY_DT");
+        String underlying = required(resolveColumn(row, "SYMBOL", "TCKRSYMB"), "SYMBOL");
+        LocalDate tradeDate = parseDate(required(resolveColumn(row, "TIMESTAMP", "TRADDT"), "TIMESTAMP"), "TIMESTAMP");
+        BigDecimal open = parseDecimal(required(resolveColumn(row, "OPEN", "OPNPRIC"), "OPEN"), "OPEN");
+        BigDecimal high = parseDecimal(required(resolveColumn(row, "HIGH", "HGHPRIC"), "HIGH"), "HIGH");
+        BigDecimal low = parseDecimal(required(resolveColumn(row, "LOW", "LWPRIC"), "LOW"), "LOW");
+        BigDecimal close = parseDecimal(required(resolveColumn(row, "CLOSE", "CLSPRIC"), "CLOSE"), "CLOSE");
+        LocalDate expiryDate = parseOptionalDate(row, "EXPIRY_DT", "XPRYDT");
 
         return new SpotBhavcopyRecord(
                 row.lineNumber(),
@@ -44,14 +44,21 @@ public class SpotBhavcopyNormalizer {
         );
     }
 
-    private String required(BhavcopyCsvReader.CsvRow row, String column) {
-        String value = row.column(column);
+    private static String resolveColumn(BhavcopyCsvReader.CsvRow row, String primary, String fallback) {
+        String value = row.column(primary);
+        if (value != null && !value.trim().isEmpty() && !MISSING_VALUE_MARKER.equals(value.trim())) {
+            return value;
+        }
+        return row.column(fallback);
+    }
+
+    private String required(String value, String fieldName) {
         if (value == null) {
-            throw new IllegalArgumentException(column + " is missing");
+            throw new IllegalArgumentException(fieldName + " is missing");
         }
         String trimmed = value.trim();
         if (trimmed.isEmpty() || MISSING_VALUE_MARKER.equals(trimmed)) {
-            throw new IllegalArgumentException(column + " is missing");
+            throw new IllegalArgumentException(fieldName + " is missing");
         }
         return trimmed;
     }
@@ -75,8 +82,8 @@ public class SpotBhavcopyNormalizer {
         throw new IllegalArgumentException(fieldName + " is not a valid date: " + value);
     }
 
-    private LocalDate parseOptionalDate(BhavcopyCsvReader.CsvRow row, String column) {
-        String value = row.column(column);
+    private LocalDate parseOptionalDate(BhavcopyCsvReader.CsvRow row, String primary, String fallback) {
+        String value = resolveColumn(row, primary, fallback);
         if (value == null || value.isBlank() || MISSING_VALUE_MARKER.equals(value.trim())) {
             return null;
         }

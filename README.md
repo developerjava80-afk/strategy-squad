@@ -378,34 +378,71 @@ data/bhavcopy/historical/derivatives/BhavCopy_NSE_FO_0_0_0_20260417_F_0000.csv
 
 ### Historical DB load status
 
-The repository already contains canonical writers for `instrument_master`, `options_historical`, and `spot_historical`, plus orchestration classes for single-file and directory-based historical ingestion.
+The historical pipeline now supports both legacy Bhavcopy CSVs and NSE UDiFF CSVs.
 
-Current limitation:
+Completed in code:
 
-- the historical ingestion normalizers still expect the older Bhavcopy column layout
-- the newly downloaded files are NSE UDiFF bhavcopy CSVs
-- there is no checked-in JDBC/QuestDB historical load CLI yet
-
-Result: downloading is working, but pushing the downloaded UDiFF files into the database through the repo code still requires a UDiFF-to-Golden-Source ingestion adaptation.
+- UDiFF-aware filters for options (`IDO`) and futures spot proxy (`IDF`)
+- Dual-column normalizers (old Bhavcopy + UDiFF names)
+- UDiFF instrument metadata mapping into `instrument_master`:
+    - `FinInstrmId` -> `exchange_token`
+    - `FinInstrmNm` -> `trading_symbol`
+    - `NewBrdLotQty` -> `lot_size`
+- Runnable local historical loaders:
+    - `HistoricalLoadMain` for raw historical tables
+    - `HistoricalDerivedBackfillMain` for non-live derived tables
 
 ---
 
-### Implementation sequence
+### Local non-live refresh (from downloaded CSV files)
 
-- [x] Create `instrument_master` with `expiry_type`
-- [x] Create `spot_historical` + `spot_live`
-- [x] Create `options_live` with `exchange_ts` / `ingest_ts` / `underlying`
-- [x] Create `options_enriched` with moneyness (pct + points), underlying price, denormalized fields
-- [x] Create `options_context_buckets`
-- [x] Implement Bhavcopy ingestion (options + spot historical)
-- [x] Implement live feed ingestion with two-timestamp model
-- [x] Implement enrichment pipeline (point-in-time spot join → moneyness computation)
-- [x] Implement contextual aggregation pipeline
+The sequence below refreshes all non-live tables and keeps live tables untouched.
 
-### Active next-step driver
+1. Compile:
 
-- **Current status summary**: All nine implementation sequence steps are complete. The repository now covers canonical schema, Bhavcopy historical ingestion (including bulk multi-file loading), live raw ingestion, point-in-time enrichment, and contextual aggregation into `options_15m_buckets` and `options_context_buckets`. Historical tables store full bhavcopy fidelity (settle price, notional value, change in OI). Spot historical ingestion deduplicates FUTIDX rows by nearest expiry to prevent multiple entries per underlying per day.
-- **Next required step**: Integration-level wiring — connect the aggregation pipeline into `LiveTickIngestionJob` so enriched ticks are aggregated inline during live ingestion, or define the batch-recompute entry point.
-- **Reason**: The aggregation logic, writers, and orchestration job exist and are unit-tested. They need to be invoked from the live ingestion pipeline or a scheduled batch job to produce actual bucket rows.
-- **Ownership recommendation**: Golden Source / analytic-vault ownership. Feed-service does not need to change.
-- **Codex review needed**: Yes for the implementation PR that introduces aggregation logic and the `volume` addition to `options_enriched`.
+```bash
+mvn -DskipTests compile
+```
+
+2. Load historical raw tables from downloaded CSV files:
+
+```bash
+mvn -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
+    -Dexec.mainClass=com.strategysquad.ingestion.bhavcopy.HistoricalLoadMain \
+    -Dexec.args="data/bhavcopy/historical/derivatives jdbc:postgresql://localhost:8812/qdb"
+```
+
+3. Backfill non-live derived tables from historical raw tables:
+
+```bash
+mvn -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
+    -Dexec.mainClass=com.strategysquad.ingestion.bhavcopy.HistoricalDerivedBackfillMain \
+    -Dexec.args="jdbc:postgresql://localhost:8812/qdb"
+```
+
+Tables refreshed by this flow:
+
+- `instrument_master`
+- `options_historical`
+- `spot_historical`
+- `options_enriched`
+- `options_15m_buckets`
+- `options_context_buckets`
+
+Live tables intentionally excluded:
+
+- `options_live`
+- `spot_live`
+
+---
+
+### QuestDB compatibility note
+
+The currently deployed local QuestDB schema may be narrower than the frozen DDL shown above.
+
+Observed local differences:
+
+- `options_historical` currently omits `settle_price`, `value_in_lakhs`, and `change_in_oi`
+- `options_enriched` currently omits `volume`
+
+Writers and backfill entrypoints are currently aligned to the deployed schema so ingestion works locally.

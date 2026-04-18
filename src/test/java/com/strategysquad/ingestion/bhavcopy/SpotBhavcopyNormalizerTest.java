@@ -50,6 +50,29 @@ class SpotBhavcopyNormalizerTest {
         assertThrows(IllegalArgumentException.class, () -> normalizer.normalize(row));
     }
 
+    @Test
+    void normalizesUdiffSpotRow() {
+        BhavcopyCsvReader.CsvRow row = new BhavcopyCsvReader.CsvRow(3, "raw", Map.ofEntries(
+                Map.entry("TCKRSYMB", "NIFTY"),
+                Map.entry("TRADDT", "2026-04-16"),
+                Map.entry("OPNPRIC", "24342.00"),
+                Map.entry("HGHPRIC", "24390.00"),
+                Map.entry("LWPRIC", "24114.00"),
+                Map.entry("CLSPRIC", "24195.80"),
+                Map.entry("XPRYDT", "2026-04-28"),
+                Map.entry("FININSTRMTP", "IDF")
+        ));
+        SpotBhavcopyRecord record = normalizer.normalize(row);
+
+        assertEquals("NIFTY", record.underlying());
+        assertEquals(LocalDate.of(2026, 4, 16), record.tradeDate());
+        assertEquals(0, new BigDecimal("24342.00").compareTo(record.open()));
+        assertEquals(0, new BigDecimal("24390.00").compareTo(record.high()));
+        assertEquals(0, new BigDecimal("24114.00").compareTo(record.low()));
+        assertEquals(0, new BigDecimal("24195.80").compareTo(record.close()));
+        assertEquals(LocalDate.of(2026, 4, 28), record.expiryDate());
+    }
+
     private BhavcopyCsvReader.CsvRow validSpotRow() {
         return new BhavcopyCsvReader.CsvRow(2, "raw", Map.ofEntries(
                 Map.entry("SYMBOL", "NIFTY"),

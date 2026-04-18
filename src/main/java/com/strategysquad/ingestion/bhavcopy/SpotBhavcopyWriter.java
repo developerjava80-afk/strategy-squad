@@ -78,10 +78,10 @@ public class SpotBhavcopyWriter {
                 statement.setTimestamp(1, tradeTs);
                 statement.setDate(2, Date.valueOf(record.tradeDate()));
                 statement.setString(3, record.underlying());
-                statement.setBigDecimal(4, record.open());
-                statement.setBigDecimal(5, record.high());
-                statement.setBigDecimal(6, record.low());
-                statement.setBigDecimal(7, record.close());
+                statement.setDouble(4, record.open().doubleValue());
+                statement.setDouble(5, record.high().doubleValue());
+                statement.setDouble(6, record.low().doubleValue());
+                statement.setDouble(7, record.close().doubleValue());
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

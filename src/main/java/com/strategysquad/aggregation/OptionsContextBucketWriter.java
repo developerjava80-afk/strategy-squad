@@ -42,9 +42,9 @@ public class OptionsContextBucketWriter {
                 statement.setString(3, bucket.optionType());
                 statement.setInt(4, bucket.timeBucket15m());
                 statement.setInt(5, bucket.moneynessBucket());
-                statement.setBigDecimal(6, bucket.avgOptionPrice());
-                statement.setBigDecimal(7, bucket.avgPriceToSpotRatio());
-                statement.setBigDecimal(8, bucket.avgVolume());
+                statement.setDouble(6, bucket.avgOptionPrice().doubleValue());
+                statement.setDouble(7, bucket.avgPriceToSpotRatio().doubleValue());
+                statement.setDouble(8, bucket.avgVolume().doubleValue());
                 statement.setLong(9, bucket.sampleCount());
                 statement.addBatch();
             }

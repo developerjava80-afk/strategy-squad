@@ -5,7 +5,6 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Savepoint;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -35,9 +34,8 @@ public class BhavcopyWriter {
     private static final String DEFAULT_INSERT_OPTIONS_SQL =
             "INSERT INTO options_historical"
                     + " (trade_ts, trade_date, instrument_id, open_price, high_price,"
-                    + "  low_price, close_price, settle_price, volume, value_in_lakhs,"
-                    + "  open_interest, change_in_oi)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "  low_price, close_price, volume, open_interest)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     /** Market close time used to normalize trade_date into trade_ts (IST 15:30). */
     private static final LocalTime MARKET_CLOSE_IST = LocalTime.of(15, 30);
@@ -61,11 +59,8 @@ public class BhavcopyWriter {
             return new WriteResult(0, 0);
         }
         boolean autoCommit = connection.getAutoCommit();
-        Savepoint savepoint = null;
         if (autoCommit) {
             connection.setAutoCommit(false);
-        } else {
-            savepoint = connection.setSavepoint("bhavcopy_ingestion_write");
         }
         try {
             int instrumentsInserted = insertInstruments(connection, records);
@@ -75,16 +70,9 @@ public class BhavcopyWriter {
             }
             return new WriteResult(instrumentsInserted, historicalInserted);
         } catch (SQLException ex) {
-            if (autoCommit) {
-                connection.rollback();
-            } else if (savepoint != null) {
-                connection.rollback(savepoint);
-            }
+            connection.rollback();
             throw ex;
         } finally {
-            if (!autoCommit && savepoint != null) {
-                connection.releaseSavepoint(savepoint);
-            }
             if (autoCommit) {
                 connection.setAutoCommit(true);
             }
@@ -112,12 +100,24 @@ public class BhavcopyWriter {
                 statement.setString(2, record.underlying());
                 statement.setString(3, record.underlying());          // symbol = underlying for index options
                 statement.setTimestamp(4, Timestamp.valueOf(record.expiryDate().atStartOfDay()));
-                statement.setBigDecimal(5, record.strike());
+                statement.setDouble(5, record.strike().doubleValue());
                 statement.setString(6, record.optionType());
-                statement.setNull(7, Types.INTEGER);                  // lot_size: not available from Bhavcopy
-                statement.setNull(8, Types.DOUBLE);                   // tick_size: not available from Bhavcopy
-                statement.setNull(9, Types.VARCHAR);                  // exchange_token: not available from Bhavcopy
-                statement.setNull(10, Types.VARCHAR);                 // trading_symbol: not available from Bhavcopy
+                if (record.lotSize() != null) {
+                    statement.setInt(7, record.lotSize());                    // lot_size: from UDiFF NewBrdLotQty
+                } else {
+                    statement.setNull(7, Types.INTEGER);                     // lot_size: not available
+                }
+                statement.setNull(8, Types.DOUBLE);                          // tick_size: not available
+                if (record.exchangeToken() != null) {
+                    statement.setString(9, record.exchangeToken());          // exchange_token: from UDiFF FinInstrmId
+                } else {
+                    statement.setNull(9, Types.VARCHAR);                     // exchange_token: not available
+                }
+                if (record.tradingSymbol() != null) {
+                    statement.setString(10, record.tradingSymbol());         // trading_symbol: from UDiFF FinInstrmNm
+                } else {
+                    statement.setNull(10, Types.VARCHAR);                    // trading_symbol: not available
+                }
                 statement.setBoolean(11, !record.expiryDate().isBefore(record.tradeDate())); // is_active
                 statement.setString(12, deriveExpiryType(record.expiryDate()));               // expiry_type
                 statement.setTimestamp(13, now);                       // created_at
@@ -177,15 +177,12 @@ public class BhavcopyWriter {
                 statement.setTimestamp(1, tradeTs);
                 statement.setDate(2, Date.valueOf(record.tradeDate()));
                 statement.setString(3, record.instrumentId());
-                statement.setBigDecimal(4, record.open());         // open_price
-                statement.setBigDecimal(5, record.high());         // high_price
-                statement.setBigDecimal(6, record.low());          // low_price
-                statement.setBigDecimal(7, record.close());        // close_price
-                statement.setBigDecimal(8, record.settlePrice());  // settle_price
-                statement.setLong(9, record.contracts());          // volume (contracts from Bhavcopy)
-                statement.setBigDecimal(10, record.valueInLakhs()); // value_in_lakhs
-                statement.setLong(11, record.openInterest());      // open_interest
-                statement.setLong(12, record.changeInOi());        // change_in_oi
+                statement.setDouble(4, record.open().doubleValue());         // open_price
+                statement.setDouble(5, record.high().doubleValue());         // high_price
+                statement.setDouble(6, record.low().doubleValue());          // low_price
+                statement.setDouble(7, record.close().doubleValue());        // close_price
+                statement.setLong(8, record.contracts());                    // volume (contracts from Bhavcopy)
+                statement.setLong(9, record.openInterest());                 // open_interest
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

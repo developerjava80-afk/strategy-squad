@@ -46,11 +46,43 @@ class BhavcopyFilterTest {
         assertTrue(filter.isRelevant(row));
     }
 
+    @Test
+    void acceptsUdiffNiftyCallOption() {
+        BhavcopyCsvReader.CsvRow row = udiffRow("IDO", "NIFTY", "CE");
+        assertTrue(filter.isRelevant(row));
+    }
+
+    @Test
+    void acceptsUdiffBankNiftyPutOption() {
+        BhavcopyCsvReader.CsvRow row = udiffRow("IDO", "BANKNIFTY", "PE");
+        assertTrue(filter.isRelevant(row));
+    }
+
+    @Test
+    void rejectsUdiffFuturesRow() {
+        BhavcopyCsvReader.CsvRow row = udiffRow("IDF", "NIFTY", "");
+        assertFalse(filter.isRelevant(row));
+    }
+
+    @Test
+    void rejectsUdiffOtherSymbol() {
+        BhavcopyCsvReader.CsvRow row = udiffRow("IDO", "RELIANCE", "CE");
+        assertFalse(filter.isRelevant(row));
+    }
+
     private BhavcopyCsvReader.CsvRow csvRow(String instrument, String symbol, String optionType) {
         return new BhavcopyCsvReader.CsvRow(1, "raw", Map.of(
                 "INSTRUMENT", instrument,
                 "SYMBOL", symbol,
                 "OPTION_TYP", optionType
+        ));
+    }
+
+    private BhavcopyCsvReader.CsvRow udiffRow(String finInstrmTp, String tckrSymb, String optnTp) {
+        return new BhavcopyCsvReader.CsvRow(1, "raw", Map.of(
+                "FININSTRMTP", finInstrmTp,
+                "TCKRSYMB", tckrSymb,
+                "OPTNTP", optnTp
         ));
     }
 }

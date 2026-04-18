@@ -16,9 +16,8 @@ public class OptionsEnrichedWriter {
             "INSERT INTO options_enriched"
                     + " (exchange_ts, instrument_id, underlying, option_type, strike,"
                     + "  expiry_date, last_price, underlying_price, minutes_to_expiry,"
-                    + "  time_bucket_15m, moneyness_pct, moneyness_points, moneyness_bucket,"
-                    + "  volume)"
-                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "  time_bucket_15m, moneyness_pct, moneyness_points, moneyness_bucket)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private final String insertSql;
 
@@ -42,16 +41,15 @@ public class OptionsEnrichedWriter {
                 statement.setString(2, tick.instrumentId());
                 statement.setString(3, tick.underlying());
                 statement.setString(4, tick.optionType());
-                statement.setBigDecimal(5, tick.strike());
+                statement.setDouble(5, tick.strike().doubleValue());
                 statement.setTimestamp(6, Timestamp.from(tick.expiryTs()));
-                statement.setBigDecimal(7, tick.lastPrice());
-                statement.setBigDecimal(8, tick.underlyingPrice());
+                statement.setDouble(7, tick.lastPrice().doubleValue());
+                statement.setDouble(8, tick.underlyingPrice().doubleValue());
                 statement.setInt(9, tick.minutesToExpiry());
                 statement.setInt(10, tick.timeBucket15m());
-                statement.setBigDecimal(11, tick.moneynessPct());
-                statement.setBigDecimal(12, tick.moneynessPoints());
+                statement.setDouble(11, tick.moneynessPct().doubleValue());
+                statement.setDouble(12, tick.moneynessPoints().doubleValue());
                 statement.setInt(13, tick.moneynessBucket());
-                statement.setLong(14, tick.volume());
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

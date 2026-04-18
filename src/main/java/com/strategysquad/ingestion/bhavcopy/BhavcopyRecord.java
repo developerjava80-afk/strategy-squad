@@ -23,7 +23,10 @@ public record BhavcopyRecord(
         BigDecimal valueInLakhs,
         long openInterest,
         long changeInOi,
-        String instrumentId
+        String instrumentId,
+        String exchangeToken,
+        String tradingSymbol,
+        Integer lotSize
 ) {
     public BhavcopyRecord {
         Objects.requireNonNull(underlying, "underlying must not be null");
@@ -60,7 +63,10 @@ public record BhavcopyRecord(
                 valueInLakhs,
                 openInterest,
                 changeInOi,
-                value
+                value,
+                exchangeToken,
+                tradingSymbol,
+                lotSize
         );
     }
 }

@@ -41,9 +41,9 @@ public class Options15mBucketWriter {
                 statement.setDate(2, Date.valueOf(bucket.tradeDate()));
                 statement.setString(3, bucket.instrumentId());
                 statement.setInt(4, bucket.timeBucket15m());
-                statement.setBigDecimal(5, bucket.avgPrice());
-                statement.setBigDecimal(6, bucket.minPrice());
-                statement.setBigDecimal(7, bucket.maxPrice());
+                statement.setDouble(5, bucket.avgPrice().doubleValue());
+                statement.setDouble(6, bucket.minPrice().doubleValue());
+                statement.setDouble(7, bucket.maxPrice().doubleValue());
                 statement.setLong(8, bucket.volumeSum());
                 statement.setLong(9, bucket.sampleCount());
                 statement.addBatch();

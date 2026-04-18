@@ -20,13 +20,23 @@ public class SpotBhavcopyFilter {
      * suitable for {@code spot_historical} ingestion.
      */
     public boolean isRelevant(BhavcopyCsvReader.CsvRow row) {
+        // Old bhavcopy format
         String symbol = normalize(row.column("SYMBOL"));
-        if (!ALLOWED_UNDERLYINGS.contains(symbol)) {
-            return false;
+        if (ALLOWED_UNDERLYINGS.contains(symbol)) {
+            String instrument = normalize(row.column("INSTRUMENT"));
+            if ("FUTIDX".equals(instrument)) {
+                return true;
+            }
         }
-        String instrument = normalize(row.column("INSTRUMENT"));
-        // Accept FUTIDX (nearest expiry futures as spot proxy) from F&O Bhavcopy
-        return "FUTIDX".equals(instrument);
+        // UDiFF format
+        String tckrSymb = normalize(row.column("TCKRSYMB"));
+        if (ALLOWED_UNDERLYINGS.contains(tckrSymb)) {
+            String finInstrmTp = normalize(row.column("FININSTRMTP"));
+            if ("IDF".equals(finInstrmTp)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String normalize(String value) {

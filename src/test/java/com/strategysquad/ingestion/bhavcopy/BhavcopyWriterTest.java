@@ -66,7 +66,10 @@ class BhavcopyWriterTest {
                 new BigDecimal("1234.56"),
                 2000,
                 250,
-                "INS_123"
+                "INS_123",
+                null,
+                null,
+                null
         );
 
         BhavcopyWriter.WriteResult result = new BhavcopyWriter().write(connectionRecorder.proxy(), List.of(record));
@@ -136,7 +139,10 @@ class BhavcopyWriterTest {
                 new BigDecimal("1234.56"),
                 2000,
                 250,
-                "INS_EXISTING"
+                "INS_EXISTING",
+                null,
+                null,
+                null
         );
 
         BhavcopyWriter.WriteResult result = new BhavcopyWriter().write(connectionRecorder.proxy(), List.of(record));
