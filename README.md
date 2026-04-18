@@ -427,6 +427,41 @@ Current runnable entrypoints:
 - `HistoricalLoadMain` reloads `instrument_master`, `options_historical`, and `spot_historical`.
 - `HistoricalDerivedBackfillMain` rebuilds `options_enriched`, `options_15m_buckets`, `options_context_buckets`, and `pcr_historical`.
 
+### Scenario Research Console
+
+The repo now includes a standalone Scenario Research workstation under `ui/scenario-research`.
+
+Product posture:
+- historical opportunity evaluation, not broker execution
+- canonical historical context remains the pricing and comparison truth
+- moneyness and DTE are first-class research dimensions
+- analytical panels are interpretation layers over canonical cohorts, not disconnected calculators
+
+Delivered sequence:
+
+1. Scenario Research Experience
+   - business-input scenario builder for underlying, option type, expiry family, DTE, spot, strike, distance from spot, option price, and optional activity framing
+   - derived context preview showing how the platform normalizes the scenario into canonical moneyness and DTE buckets
+2. Historical Fair Value and Context Lens
+   - cheap / fair / rich / extreme valuation framing
+   - historical distribution positioning
+   - sample-strength context
+3. Forward Outcome Explorer
+   - next-day, short-horizon, and expiry-horizon outcome tendencies
+   - long-premium / short-premium / no-trade posture framing
+4. Diagnostics, Confidence, and Historical Case Explorer
+   - cohort size, concentration, sparsity warnings, coverage, and representative comparable cases
+5. Research Workflow, Comparison, and Opportunity Decision Layer
+   - saved studies
+   - side-by-side comparison board
+   - reloadable prior research
+   - opportunity buckets (`attractive`, `uncertain`, `unattractive`)
+   - browser-local workstation persistence for iterative discovery
+
+Current implementation note:
+- The Scenario Research console is a polished deterministic prototype aligned to the canonical database model.
+- It is not yet wired to live DB-backed cohort retrieval, forward-outcome retrieval, or server-side persistence.
+
 Completed in code:
 
 - UDiFF-aware filters for options (`IDO`) and derivative fallback rows (`IDF`)
@@ -497,6 +532,11 @@ Recommended analytics assumption:
 
 - Yes, for the non-live historical stack you can now treat the dataset as clean enough to proceed with analytics work.
 - Keep the assumption scoped to historical/raw-derived tables rebuilt by this flow. Live ingestion and any future schema changes still need their own validation cycle.
+
+Current repo baseline:
+- the repo contains an expanded historical derivatives archive under `data/bhavcopy/historical/derivatives`
+- historical pricing context and derived tables are aligned to canonical spot-based underlying history
+- `ui/scenario-research` is the current end-to-end research-console shell for future DB-backed analytics wiring
 
 ---
 

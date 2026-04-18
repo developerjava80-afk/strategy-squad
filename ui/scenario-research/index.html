@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Scenario Research</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="shell">
+    <header class="hero">
+        <div class="hero-copy">
+            <p class="eyebrow">Strategy Squad / Scenario Research</p>
+            <h1>Historical opportunity evaluation for option contexts, not retail pricing shortcuts.</h1>
+            <p class="hero-text">
+                Define the exact option setup you want to study, see how the platform normalizes it into moneyness
+                and time-to-expiry, and understand which historical cohort should anchor deeper analysis.
+            </p>
+        </div>
+        <aside class="hero-metrics">
+            <div class="metric-card">
+                <span class="metric-label">Primary axes</span>
+                <strong>Moneyness + DTE</strong>
+                <p>Every scenario is translated into a historical comparison context built on spot distance and time remaining.</p>
+            </div>
+            <div class="metric-card accent">
+                <span class="metric-label">Research posture</span>
+                <strong>Canonical DB path</strong>
+                <p>The screen previews how the golden-source pipeline would interpret this setup before cohort lookup.</p>
+            </div>
+        </aside>
+    </header>
+
+    <main class="workspace">
+        <section class="panel builder-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="kicker">Scenario Builder</p>
+                    <h2>Describe the setup in business terms</h2>
+                </div>
+                <p class="panel-note">Inputs are intentionally phrased the way a researcher thinks about the setup before asking for historical analogs.</p>
+            </div>
+
+            <form id="scenario-form" class="builder-grid">
+                <label class="field">
+                    <span>Underlying</span>
+                    <select id="underlying" name="underlying">
+                        <option value="NIFTY">NIFTY</option>
+                        <option value="BANKNIFTY">BANKNIFTY</option>
+                    </select>
+                </label>
+
+                <fieldset class="choice-group">
+                    <legend>Option type</legend>
+                    <div class="segmented">
+                        <label><input type="radio" name="optionType" value="CE" checked>Call</label>
+                        <label><input type="radio" name="optionType" value="PE">Put</label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="choice-group">
+                    <legend>Expiry type</legend>
+                    <div class="segmented">
+                        <label><input type="radio" name="expiryType" value="WEEKLY" checked>Weekly</label>
+                        <label><input type="radio" name="expiryType" value="MONTHLY">Monthly</label>
+                    </div>
+                </fieldset>
+
+                <label class="field">
+                    <span>Days to expiry</span>
+                    <input id="dte" name="dte" type="number" min="0" step="1" value="4">
+                </label>
+
+                <label class="field">
+                    <span>Current spot</span>
+                    <input id="spot" name="spot" type="number" min="0" step="0.05" value="22480">
+                </label>
+
+                <label class="field">
+                    <span>Strike</span>
+                    <input id="strike" name="strike" type="number" min="0" step="0.05" value="22600">
+                </label>
+
+                <label class="field">
+                    <span>Distance from spot</span>
+                    <div class="compound-input">
+                        <input id="distancePoints" name="distancePoints" type="number" step="0.05" value="120">
+                        <span class="suffix">pts</span>
+                    </div>
+                    <small class="field-help">Positive means strike above spot. The screen keeps strike and spot-distance in sync.</small>
+                </label>
+
+                <label class="field">
+                    <span>Current option price</span>
+                    <input id="optionPrice" name="optionPrice" type="number" min="0" step="0.05" value="142.5">
+                </label>
+
+                <label class="field">
+                    <span>Activity context</span>
+                    <select id="activityBias" name="activityBias">
+                        <option value="Balanced">Balanced flow</option>
+                        <option value="Volume expansion">Volume expansion</option>
+                        <option value="OI build-up">OI build-up</option>
+                        <option value="Position unwind">Position unwind</option>
+                        <option value="Event-driven">Event-driven session</option>
+                    </select>
+                </label>
+
+                <label class="field field-wide">
+                    <span>Research framing</span>
+                    <textarea id="researchNote" name="researchNote" rows="3" placeholder="Optional note: what makes this setup interesting?">Testing a short-dated OTM call during a firm index tape with moderate premium.</textarea>
+                </label>
+            </form>
+        </section>
+
+        <section class="side-stack">
+            <section class="panel workflow-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Research Workflow and Opportunity Decision Layer</p>
+                        <h2>Turn one scenario into a repeatable strategy lab process</h2>
+                    </div>
+                    <p class="panel-note">Compare scenarios, save research states, revisit prior work, and keep every opportunity read tied back to canonical historical evidence.</p>
+                </div>
+
+                <div class="workflow-toolbar">
+                    <button class="workflow-button primary" id="save-scenario-button" type="button">Save Current Scenario</button>
+                    <button class="workflow-button" id="clone-scenario-button" type="button">Clone for Comparison</button>
+                    <button class="workflow-button" id="refresh-board-button" type="button">Refresh Opportunity Board</button>
+                </div>
+                <p class="workflow-status" id="workflow-status">Current scenario is live in the builder and ready to be saved into the research workspace.</p>
+
+                <div class="workflow-grid">
+                    <section class="workflow-card compare-card">
+                        <div class="distribution-header">
+                            <div>
+                                <span class="context-label">Scenario Compare Board</span>
+                                <h3>Side-by-side opportunity framing</h3>
+                            </div>
+                        </div>
+                        <div class="compare-table-wrap">
+                            <table class="cohort-table">
+                                <thead>
+                                <tr>
+                                    <th>Scenario</th>
+                                    <th>Valuation</th>
+                                    <th>Forward posture</th>
+                                    <th>Trust</th>
+                                </tr>
+                                </thead>
+                                <tbody id="compare-board-body">
+                                <tr>
+                                    <td>Current build</td>
+                                    <td>Fair</td>
+                                    <td>Lean long premium</td>
+                                    <td>Usable with caution</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="workflow-card workspace-card">
+                        <div class="distribution-header">
+                            <div>
+                                <span class="context-label">Research Workspace</span>
+                                <h3>Saved opportunity studies</h3>
+                            </div>
+                        </div>
+                        <div class="workspace-list" id="workspace-list">
+                            <article class="workspace-item">
+                                <div>
+                                    <strong>NIFTY weekly CE / +100 / 4 DTE</strong>
+                                    <p>Saved as a premium-expansion candidate with moderate evidence.</p>
+                                </div>
+                                <span class="workspace-tag">Watchlist</span>
+                            </article>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="workflow-grid">
+                    <section class="workflow-card board-card">
+                        <div class="distribution-header">
+                            <div>
+                                <span class="context-label">Opportunity Board</span>
+                                <h3>Historically attractive vs unattractive vs uncertain</h3>
+                            </div>
+                        </div>
+                        <div class="opportunity-columns">
+                            <div class="opportunity-column attractive">
+                                <span class="column-title">Attractive</span>
+                                <div class="opportunity-stack" id="attractive-stack">
+                                    <article class="opportunity-tile">
+                                        <strong>Long premium candidate</strong>
+                                        <p>Expansion-leaning setup with usable evidence.</p>
+                                    </article>
+                                </div>
+                            </div>
+                            <div class="opportunity-column uncertain">
+                                <span class="column-title">Uncertain</span>
+                                <div class="opportunity-stack" id="uncertain-stack">
+                                    <article class="opportunity-tile">
+                                        <strong>Mixed context</strong>
+                                        <p>Useful signal, but horizon asymmetry remains balanced.</p>
+                                    </article>
+                                </div>
+                            </div>
+                            <div class="opportunity-column unattractive">
+                                <span class="column-title">Unattractive</span>
+                                <div class="opportunity-stack" id="unattractive-stack">
+                                    <article class="opportunity-tile">
+                                        <strong>Low conviction expression</strong>
+                                        <p>History does not support forcing this premium posture.</p>
+                                    </article>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="workflow-card journal-card">
+                        <div class="distribution-header">
+                            <div>
+                                <span class="context-label">Research Journal</span>
+                                <h3>Prior studies and iterative discovery</h3>
+                            </div>
+                        </div>
+                        <div class="journal-list" id="journal-list">
+                            <article class="journal-entry">
+                                <strong>Scenario review</strong>
+                                <p>Saved as a front-foot weekly premium expansion study with moderate confidence and expiry decay caveat.</p>
+                                <span>Linked to canonical cohort: NIFTY / CE / WEEKLY / +100 / 3-7 DTE</span>
+                            </article>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="panel preview-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Derived Context Preview</p>
+                        <h2>How the system interprets this setup</h2>
+                    </div>
+                </div>
+                <div class="context-grid" id="context-grid">
+                    <article class="context-card">
+                        <span class="context-label">Moneyness</span>
+                        <strong id="moneyness-summary">+120 pts / +0.53%</strong>
+                        <p id="moneyness-text">Strike sits 120 points above spot, so the setup normalizes into an OTM call-style distance band.</p>
+                    </article>
+                    <article class="context-card">
+                        <span class="context-label">Time to expiry</span>
+                        <strong id="dte-summary">4 DTE</strong>
+                        <p id="dte-text">This falls into a short-dated weekly expiry context where option response tends to be highly path-sensitive.</p>
+                    </article>
+                    <article class="context-card">
+                        <span class="context-label">Premium stance</span>
+                        <strong id="premium-summary">0.63% of spot</strong>
+                        <p id="premium-text">Current premium is modest relative to spot, which matters when evaluating comparable historical payoff shapes.</p>
+                    </article>
+                    <article class="context-card emphasis">
+                        <span class="context-label">Canonical cohort key</span>
+                        <strong id="cohort-key">NIFTY / CE / WEEKLY / 4 DTE / +100 bucket</strong>
+                        <p id="cohort-text">The strategy layer would look up historical observations using the denormalized option context rather than ad hoc UI math.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="panel valuation-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Historical Fair Value and Context Lens</p>
+                        <h2>Where does today’s observation sit inside history?</h2>
+                    </div>
+                    <p class="panel-note">This is an interpretation layer over comparable cohort behavior, not a raw dump of historical rows.</p>
+                </div>
+
+                <div class="valuation-topline">
+                    <article class="valuation-badge" id="valuation-badge">
+                        <span class="context-label">Fairness read</span>
+                        <strong id="fairness-label">Fair</strong>
+                        <p id="fairness-text">Current premium is sitting close to the cohort center of gravity.</p>
+                    </article>
+                    <article class="valuation-stats">
+                        <div class="stat-row">
+                            <span>Current option price</span>
+                            <strong id="valuation-current">142.50</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Historical fair value zone</span>
+                            <strong id="valuation-zone">126.00 - 156.00</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Position inside history</span>
+                            <strong id="valuation-percentile">58th percentile</strong>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="distribution-card">
+                    <div class="distribution-header">
+                        <div>
+                            <span class="context-label">Historical distribution</span>
+                            <h3 id="distribution-title">Comparable premium range</h3>
+                        </div>
+                        <div class="distribution-legend">
+                            <span><i class="legend-dot center"></i>fair zone</span>
+                            <span><i class="legend-dot current"></i>current</span>
+                        </div>
+                    </div>
+
+                    <div class="distribution-bar">
+                        <div class="dist-segment dist-left"></div>
+                        <div class="dist-segment dist-center" id="dist-center"></div>
+                        <div class="dist-segment dist-right"></div>
+                        <div class="distribution-marker median-marker" id="median-marker"></div>
+                        <div class="distribution-marker current-marker" id="current-marker"></div>
+                    </div>
+
+                    <div class="distribution-scale">
+                        <span id="dist-min">88</span>
+                        <span id="dist-p25">126</span>
+                        <span id="dist-median">141</span>
+                        <span id="dist-p75">156</span>
+                        <span id="dist-max">214</span>
+                    </div>
+
+                    <p class="distribution-summary" id="distribution-summary">
+                        The current premium is within the inner historical band, slightly above the cohort median but not stretching into extreme territory.
+                    </p>
+                </div>
+
+                <div class="evidence-grid">
+                    <article class="evidence-card">
+                        <span class="context-label">Sample strength</span>
+                        <strong id="sample-strength">Moderate confidence</strong>
+                        <p id="sample-text">The cohort is broad enough to be useful, but not deep enough to ignore regime sensitivity.</p>
+                    </article>
+                    <article class="evidence-card">
+                        <span class="context-label">Cohort density</span>
+                        <strong id="sample-size">312 observations</strong>
+                        <p id="sample-size-text">Enough comparable observations to form a stable view of price location.</p>
+                    </article>
+                    <article class="evidence-card">
+                        <span class="context-label">Interpretation bias check</span>
+                        <strong id="bias-check">Watch activity overlay</strong>
+                        <p id="bias-text">Activity context can sharpen the story, but the pricing read should still be anchored to the canonical cohort.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="panel cohort-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Comparable Historical Cohort</p>
+                        <h2>What would be compared against what?</h2>
+                    </div>
+                </div>
+
+                <div class="cohort-rail">
+                    <div class="rail-marker">
+                        <span class="rail-title">Exact context under test</span>
+                        <p id="exact-context">NIFTY weekly CE, 4 DTE, strike 120 points above spot, premium 142.50.</p>
+                    </div>
+                    <div class="rail-marker">
+                        <span class="rail-title">Historical interpretation</span>
+                        <p id="interpreted-context">Normalized to a +100 moneyness bucket with short-dated expiry behavior and the selected activity context layered on top.</p>
+                    </div>
+                    <div class="rail-marker">
+                        <span class="rail-title">Cohort query shape</span>
+                        <code id="query-shape">underlying=NIFTY, option_type=CE, expiry_type=WEEKLY, moneyness_bucket=+100, dte_bucket=0-7</code>
+                    </div>
+                </div>
+
+                <div class="cohort-table-wrap">
+                    <table class="cohort-table">
+                        <thead>
+                        <tr>
+                            <th>Dimension</th>
+                            <th>Selected value</th>
+                            <th>Historical cohort use</th>
+                        </tr>
+                        </thead>
+                        <tbody id="cohort-body">
+                        <tr>
+                            <td>Underlying</td>
+                            <td>NIFTY</td>
+                            <td>Partition and cohort scope anchor</td>
+                        </tr>
+                        <tr>
+                            <td>Moneyness</td>
+                            <td>+120 points</td>
+                            <td>Rounded into canonical bucket for cross-contract comparability</td>
+                        </tr>
+                        <tr>
+                            <td>DTE</td>
+                            <td>4 days</td>
+                            <td>Mapped to short-dated expiry cohort</td>
+                        </tr>
+                        <tr>
+                            <td>Activity lens</td>
+                            <td>Balanced flow</td>
+                            <td>Optional overlay for deeper research slices, not pricing truth</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel outcome-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Forward Outcome Explorer</p>
+                        <h2>What usually happened after similar setups?</h2>
+                    </div>
+                    <p class="panel-note">This is opportunity-analysis research: multi-horizon outcome tendencies, asymmetry, and decision posture rather than a single forward expectation.</p>
+                </div>
+
+                <div class="outcome-topline">
+                    <article class="outcome-callout" id="outcome-callout">
+                        <span class="context-label">Historical decision posture</span>
+                        <strong id="decision-posture">Lean long premium</strong>
+                        <p id="decision-rationale">Comparable setups historically showed more upside expansion than clean decay, especially over the short horizon.</p>
+                    </article>
+                    <article class="outcome-bias">
+                        <div class="stat-row">
+                            <span>Next-step bias</span>
+                            <strong id="next-step-bias">Expansion favored</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Asymmetry score</span>
+                            <strong id="asymmetry-score">+0.42</strong>
+                        </div>
+                        <div class="stat-row">
+                            <span>Decision confidence</span>
+                            <strong id="decision-confidence">Moderate</strong>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="horizon-grid">
+                    <article class="horizon-card">
+                        <span class="context-label">Next day</span>
+                        <strong id="next-day-median">+4.8%</strong>
+                        <p id="next-day-text">The next-day move historically leaned positive, but with meaningful two-sided noise.</p>
+                        <div class="mini-bars" id="next-day-bars">
+                            <div class="mini-bar positive" style="width:48%"></div>
+                            <div class="mini-bar neutral" style="width:23%"></div>
+                            <div class="mini-bar negative" style="width:29%"></div>
+                        </div>
+                        <div class="mini-legend">
+                            <span id="next-day-up">48% expand</span>
+                            <span id="next-day-flat">23% flat</span>
+                            <span id="next-day-down">29% decay</span>
+                        </div>
+                    </article>
+
+                    <article class="horizon-card">
+                        <span class="context-label">Short horizon</span>
+                        <strong id="short-horizon-median">+9.6%</strong>
+                        <p id="short-horizon-text">Across the first few sessions, historical outcomes showed stronger skew toward premium follow-through.</p>
+                        <div class="mini-bars" id="short-horizon-bars">
+                            <div class="mini-bar positive" style="width:55%"></div>
+                            <div class="mini-bar neutral" style="width:18%"></div>
+                            <div class="mini-bar negative" style="width:27%"></div>
+                        </div>
+                        <div class="mini-legend">
+                            <span id="short-up">55% expand</span>
+                            <span id="short-flat">18% flat</span>
+                            <span id="short-down">27% decay</span>
+                        </div>
+                    </article>
+
+                    <article class="horizon-card">
+                        <span class="context-label">Expiry horizon</span>
+                        <strong id="expiry-horizon-median">-6.1%</strong>
+                        <p id="expiry-horizon-text">Into expiry, the cohort still retained decay risk even when early path behavior was constructive for long premium.</p>
+                        <div class="mini-bars" id="expiry-horizon-bars">
+                            <div class="mini-bar positive" style="width:31%"></div>
+                            <div class="mini-bar neutral" style="width:16%"></div>
+                            <div class="mini-bar negative" style="width:53%"></div>
+                        </div>
+                        <div class="mini-legend">
+                            <span id="expiry-up">31% expand</span>
+                            <span id="expiry-flat">16% flat</span>
+                            <span id="expiry-down">53% decay</span>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="outcome-distribution">
+                    <div class="distribution-header">
+                        <div>
+                            <span class="context-label">Outcome shape</span>
+                            <h3 id="outcome-shape-title">Forward premium distribution by horizon</h3>
+                        </div>
+                    </div>
+
+                    <div class="shape-grid">
+                        <div class="shape-row">
+                            <span>Next day</span>
+                            <div class="shape-track">
+                                <div class="shape-band left" id="shape-next-left"></div>
+                                <div class="shape-band center" id="shape-next-center"></div>
+                                <div class="shape-band right" id="shape-next-right"></div>
+                            </div>
+                            <strong id="shape-next-range">-11% to +18%</strong>
+                        </div>
+                        <div class="shape-row">
+                            <span>Short horizon</span>
+                            <div class="shape-track">
+                                <div class="shape-band left" id="shape-short-left"></div>
+                                <div class="shape-band center" id="shape-short-center"></div>
+                                <div class="shape-band right" id="shape-short-right"></div>
+                            </div>
+                            <strong id="shape-short-range">-18% to +32%</strong>
+                        </div>
+                        <div class="shape-row">
+                            <span>Expiry horizon</span>
+                            <div class="shape-track">
+                                <div class="shape-band left" id="shape-expiry-left"></div>
+                                <div class="shape-band center" id="shape-expiry-center"></div>
+                                <div class="shape-band right" id="shape-expiry-right"></div>
+                            </div>
+                            <strong id="shape-expiry-range">-46% to +24%</strong>
+                        </div>
+                    </div>
+
+                    <p class="distribution-summary" id="outcome-distribution-summary">
+                        The opportunity profile is asymmetric: early horizons reward premium expansion more often than they punish it, but expiry-horizon decay still dominates the tail.
+                    </p>
+                </div>
+
+                <div class="stance-table-wrap">
+                    <table class="cohort-table">
+                        <thead>
+                        <tr>
+                            <th>Research question</th>
+                            <th>Historical read</th>
+                            <th>Interpretation</th>
+                        </tr>
+                        </thead>
+                        <tbody id="stance-body">
+                        <tr>
+                            <td>Short premium?</td>
+                            <td>Caution</td>
+                            <td>Early expansion risk was high enough to make clean short-premium expression fragile.</td>
+                        </tr>
+                        <tr>
+                            <td>Long premium?</td>
+                            <td>Constructive</td>
+                            <td>Early forward path historically favored upside premium response.</td>
+                        </tr>
+                        <tr>
+                            <td>No-trade?</td>
+                            <td>Still valid if evidence thin</td>
+                            <td>If regime match is weak, defer to sample quality instead of forcing the setup.</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel diagnostics-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Diagnostics, Confidence, and Historical Case Explorer</p>
+                        <h2>Why should this conclusion be trusted?</h2>
+                    </div>
+                    <p class="panel-note">This layer makes the research engine auditable by exposing cohort depth, concentration, sparsity risk, and representative historical matches.</p>
+                </div>
+
+                <div class="diagnostics-topline">
+                    <article class="trust-card" id="trust-card">
+                        <span class="context-label">Evidence trust level</span>
+                        <strong id="trust-level">Usable with caution</strong>
+                        <p id="trust-text">The cohort is directionally informative, but concentration and horizon coverage still matter for disciplined interpretation.</p>
+                    </article>
+                    <div class="trust-metrics">
+                        <article class="mini-metric">
+                            <span class="metric-label">Cohort size</span>
+                            <strong id="diag-cohort-size">312</strong>
+                            <p id="diag-cohort-size-text">Comparable historical observations in the canonical cohort.</p>
+                        </article>
+                        <article class="mini-metric">
+                            <span class="metric-label">Sample concentration</span>
+                            <strong id="diag-concentration">Moderate</strong>
+                            <p id="diag-concentration-text">Observations are somewhat clustered, but not so tightly that one micro-regime dominates the read.</p>
+                        </article>
+                        <article class="mini-metric">
+                            <span class="metric-label">Sparsity risk</span>
+                            <strong id="diag-sparsity">Contained</strong>
+                            <p id="diag-sparsity-text">The cohort is broad enough to avoid major sparsity warnings.</p>
+                        </article>
+                    </div>
+                </div>
+
+                <div class="warning-strip" id="warning-strip">
+                    <div class="warning-chip" id="warning-chip-1">No major sparsity warning</div>
+                    <div class="warning-chip" id="warning-chip-2">Weekly expiry coverage adequate</div>
+                    <div class="warning-chip" id="warning-chip-3">Outcome read still regime-sensitive</div>
+                </div>
+
+                <div class="coverage-grid">
+                    <article class="coverage-card">
+                        <span class="context-label">Coverage by horizon</span>
+                        <div class="coverage-row">
+                            <span>Next day coverage</span>
+                            <strong id="coverage-next">94%</strong>
+                        </div>
+                        <div class="coverage-row">
+                            <span>Short horizon coverage</span>
+                            <strong id="coverage-short">88%</strong>
+                        </div>
+                        <div class="coverage-row">
+                            <span>Expiry horizon coverage</span>
+                            <strong id="coverage-expiry">76%</strong>
+                        </div>
+                    </article>
+
+                    <article class="coverage-card">
+                        <span class="context-label">Why matches are comparable</span>
+                        <ul class="compare-list" id="compare-list">
+                            <li>Same underlying and option orientation</li>
+                            <li>Same expiry family and near-identical DTE bucket</li>
+                            <li>Moneyness mapped into the same canonical bucket</li>
+                            <li>Optional activity context used only as a secondary filter</li>
+                        </ul>
+                    </article>
+                </div>
+
+                <div class="case-explorer">
+                    <div class="distribution-header">
+                        <div>
+                            <span class="context-label">Historical Case Explorer</span>
+                            <h3 id="case-title">Representative historical matches</h3>
+                        </div>
+                    </div>
+
+                    <div class="case-list" id="case-list">
+                        <article class="case-card">
+                            <div class="case-head">
+                                <strong>2024-02-14</strong>
+                                <span class="match-score">Match 0.94</span>
+                            </div>
+                            <p class="case-context">NIFTY weekly CE, +100 bucket, 4 DTE, balanced flow.</p>
+                            <div class="case-stats">
+                                <span>Entry premium 138.2</span>
+                                <span>Next day +6.4%</span>
+                                <span>Expiry -2.1%</span>
+                            </div>
+                            <p class="case-why">Close moneyness, same DTE band, and similar premium-to-spot posture.</p>
+                        </article>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
