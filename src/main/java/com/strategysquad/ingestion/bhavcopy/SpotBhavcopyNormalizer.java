@@ -30,6 +30,7 @@ public class SpotBhavcopyNormalizer {
         BigDecimal high = parseDecimal(required(row, "HIGH"), "HIGH");
         BigDecimal low = parseDecimal(required(row, "LOW"), "LOW");
         BigDecimal close = parseDecimal(required(row, "CLOSE"), "CLOSE");
+        LocalDate expiryDate = parseOptionalDate(row, "EXPIRY_DT");
 
         return new SpotBhavcopyRecord(
                 row.lineNumber(),
@@ -38,7 +39,8 @@ public class SpotBhavcopyNormalizer {
                 open,
                 high,
                 low,
-                close
+                close,
+                expiryDate
         );
     }
 
@@ -71,5 +73,20 @@ public class SpotBhavcopyNormalizer {
             }
         }
         throw new IllegalArgumentException(fieldName + " is not a valid date: " + value);
+    }
+
+    private LocalDate parseOptionalDate(BhavcopyCsvReader.CsvRow row, String column) {
+        String value = row.column(column);
+        if (value == null || value.isBlank() || MISSING_VALUE_MARKER.equals(value.trim())) {
+            return null;
+        }
+        for (DateTimeFormatter format : DATE_FORMATS) {
+            try {
+                return LocalDate.parse(value.trim(), format);
+            } catch (DateTimeParseException ignored) {
+                // try next format
+            }
+        }
+        return null;
     }
 }

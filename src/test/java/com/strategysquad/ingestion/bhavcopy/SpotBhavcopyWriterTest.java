@@ -27,7 +27,8 @@ class SpotBhavcopyWriterTest {
                 new BigDecimal("48200.10"),
                 new BigDecimal("48510.25"),
                 new BigDecimal("48090.75"),
-                new BigDecimal("48455.40")
+                new BigDecimal("48455.40"),
+                null
         );
 
         int inserted = new SpotBhavcopyWriter().write(connectionRecorder.proxy(), List.of(record));
