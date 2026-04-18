@@ -40,7 +40,9 @@ public class BhavcopyArchiveException extends Exception {
 
     public enum Reason {
         INVALID_DATE,
-        ARCHIVE_NOT_FOUND,
+        REPORTS_DISCOVERY_FAILED,
+        FNO_BHAVCOPY_REPORT_NOT_FOUND,
+        AMBIGUOUS_REPORT_MATCH,
         DOWNLOAD_FAILED,
         EXTRACTION_FAILED
     }

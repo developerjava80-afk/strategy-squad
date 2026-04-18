@@ -19,7 +19,8 @@ public class BhavcopyArchiveDownloader {
     private static final Path DEFAULT_STORAGE_ROOT = Path.of("data", "bhavcopy", "historical");
 
     private final Path storageRoot;
-    private final BhavcopyArchiveUrlResolver urlResolver;
+    private final BhavcopyReportDiscoverer reportDiscoverer;
+    private final BhavcopyReportSelector reportSelector;
     private final ArchiveHttpClient httpClient;
     private final BhavcopyZipExtractor zipExtractor;
 
@@ -28,38 +29,39 @@ public class BhavcopyArchiveDownloader {
     }
 
     public BhavcopyArchiveDownloader(Path storageRoot) {
-        this(storageRoot, new BhavcopyArchiveUrlResolver(), new DefaultArchiveHttpClient(), new BhavcopyZipExtractor());
+        this(
+                storageRoot,
+                new BhavcopyReportDiscoverer(),
+                new BhavcopyReportSelector(),
+                new DefaultArchiveHttpClient(),
+                new BhavcopyZipExtractor()
+        );
     }
 
     BhavcopyArchiveDownloader(
             Path storageRoot,
-            BhavcopyArchiveUrlResolver urlResolver,
+            BhavcopyReportDiscoverer reportDiscoverer,
+            BhavcopyReportSelector reportSelector,
             ArchiveHttpClient httpClient,
             BhavcopyZipExtractor zipExtractor
     ) {
         this.storageRoot = Objects.requireNonNull(storageRoot, "storageRoot must not be null");
-        this.urlResolver = Objects.requireNonNull(urlResolver, "urlResolver must not be null");
+        this.reportDiscoverer = Objects.requireNonNull(reportDiscoverer, "reportDiscoverer must not be null");
+        this.reportSelector = Objects.requireNonNull(reportSelector, "reportSelector must not be null");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
         this.zipExtractor = Objects.requireNonNull(zipExtractor, "zipExtractor must not be null");
     }
 
     public DownloadResult download(LocalDate tradeDate) throws BhavcopyArchiveException {
         validateTradeDate(tradeDate);
-        URI archiveUri = urlResolver.resolve(tradeDate);
+        BhavcopyReport selectedReport = reportSelector.selectFnoBhavcopyZip(tradeDate, reportDiscoverer.discover(tradeDate));
+        URI archiveUri = selectedReport.downloadUri();
         Path storageDirectory = storageDirectory(tradeDate);
-        Path zipFile = storageDirectory.resolve(urlResolver.zipFileName(tradeDate));
+        Path zipFile = storageDirectory.resolve(selectedReport.fileName());
 
         try {
             Files.createDirectories(storageDirectory);
             int statusCode = httpClient.download(archiveUri, zipFile);
-            if (statusCode == 404) {
-                throw new BhavcopyArchiveException(
-                        BhavcopyArchiveException.Reason.ARCHIVE_NOT_FOUND,
-                        tradeDate,
-                        archiveUri,
-                        "Bhavcopy archive not found for trade date " + tradeDate
-                );
-            }
             if (statusCode < 200 || statusCode >= 300) {
                 throw new BhavcopyArchiveException(
                         BhavcopyArchiveException.Reason.DOWNLOAD_FAILED,
@@ -82,7 +84,7 @@ public class BhavcopyArchiveDownloader {
                 );
             }
 
-            return new DownloadResult(tradeDate, archiveUri, storageDirectory, zipFile, csvFile);
+            return new DownloadResult(tradeDate, archiveUri, storageDirectory, zipFile, csvFile, selectedReport);
         } catch (BhavcopyArchiveException ex) {
             throw ex;
         } catch (IOException ex) {
@@ -137,7 +139,8 @@ public class BhavcopyArchiveDownloader {
             URI archiveUri,
             Path storageDirectory,
             Path zipFile,
-            Path csvFile
+            Path csvFile,
+            BhavcopyReport report
     ) {
         public DownloadResult {
             Objects.requireNonNull(tradeDate, "tradeDate must not be null");
@@ -145,6 +148,7 @@ public class BhavcopyArchiveDownloader {
             Objects.requireNonNull(storageDirectory, "storageDirectory must not be null");
             Objects.requireNonNull(zipFile, "zipFile must not be null");
             Objects.requireNonNull(csvFile, "csvFile must not be null");
+            Objects.requireNonNull(report, "report must not be null");
         }
     }
 
