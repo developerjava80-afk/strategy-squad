@@ -4,11 +4,13 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Selects the single FNO Bhavcopy ZIP report from discovered reports.
  */
 public class BhavcopyReportSelector {
+    private static final Pattern FO_BHAVCOPY_ZIP_PATTERN = Pattern.compile("\\bFO\\d{2}.*BHAV\\.CSV\\.ZIP");
 
     public BhavcopyReport selectFnoBhavcopyZip(LocalDate tradeDate, List<BhavcopyReport> reports)
             throws BhavcopyArchiveException {
@@ -45,7 +47,7 @@ public class BhavcopyReportSelector {
         String metadata = (report.reportName() + " " + report.fileName() + " " + report.downloadUri())
                 .toUpperCase(Locale.ENGLISH);
         boolean looksLikeBhavcopy = metadata.contains("BHAVCOPY") || metadata.contains("BHAV.CSV");
-        boolean looksLikeFno = metadata.contains("FNO") || metadata.matches(".*\\bFO\\d{2}.*BHAV\\.CSV\\.ZIP.*");
+        boolean looksLikeFno = metadata.contains("FNO") || FO_BHAVCOPY_ZIP_PATTERN.matcher(metadata).find();
         return looksLikeBhavcopy && looksLikeFno;
     }
 }
