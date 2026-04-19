@@ -2,6 +2,12 @@
 
 This document captures the current structure-testing console implementation and how it stays aligned to the platform's golden-source historical model.
 
+Required pre-task review:
+
+- Before implementing or changing any strategy-analysis logic, recommendation logic, payoff metric, or user-facing interpretation, review [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md).
+- Treat that contract as the mandatory business/domain brief for this workstation.
+- Before making code changes, also review [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md).
+
 ## Product posture
 
 - The UI is a flat historical structure-testing console, not a trading or order-entry screen.
@@ -63,6 +69,13 @@ Structure-testing components:
 ## Strategy analysis contract
 
 The strategy layer now analyzes the full historical structure, not just individual legs.
+
+Domain guardrails from the contract apply here directly:
+
+- payoff invariants must not be violated by labels or metrics
+- raw historical best/worst values must not be implied as current-trade payoff bounds
+- recommendation output must remain transparent and non-optimizer language
+- if a metric is mathematically true but trader-misleading, it should be relabeled, normalized, moved to report, or suppressed
 
 Published compact outputs:
 

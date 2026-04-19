@@ -431,6 +431,11 @@ Current runnable entrypoints:
 
 The repo now includes a standalone flat structure-testing console under `ui/scenario-research`.
 
+Mandatory domain-review requirement:
+- Before any task that changes strategy-analysis logic, recommendation logic, payoff interpretation, or user-facing metrics, review [docs/options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md).
+- That contract is the business and domain brief for this project and should be treated as required context, not optional reference material.
+- Also review [docs/developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md) before making code changes in those areas.
+
 Product posture:
 - fast historical structure-testing engine, not broker execution
 - canonical historical context remains the pricing and comparison truth
@@ -491,6 +496,7 @@ Current implementation note:
 - the console is now centered on full strategy structure testing rather than a small strategy toggle
 - the UI posts a full multi-leg structure to the backend and receives one compact structure snapshot
 - recommendation ranking is deterministic and transparent; it compares a small candidate set around the same market context rather than acting like a black-box optimizer
+- the domain contract governs payoff safety, unit clarity, current-trade comparability, and recommendation honesty
 
 Canonical server-backed components:
 - `CanonicalScenarioResolver` resolves each leg into the same cohort vocabulary used by the data platform

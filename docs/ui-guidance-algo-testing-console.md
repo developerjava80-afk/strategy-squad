@@ -2,6 +2,12 @@
 
 This document explains every output published by the flat structure-testing console and the functional meaning of each one.
 
+Required pre-task review:
+
+- Before changing any UI metric, payoff label, recommendation wording, or report field, review [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md).
+- The contract defines the business-safe meaning of every displayed structure metric.
+- Before making code changes, also review [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md).
+
 ## Screen intent
 
 The screen is a compact historical structure-testing tool.
@@ -352,3 +358,4 @@ Every output on the screen must remain:
 - reproducible from historical reload and backfill
 - explainable in compact numeric form
 - suitable for fast structure testing without UI clutter
+- economically safe and trader-readable under the domain contract
