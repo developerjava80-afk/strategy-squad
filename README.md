@@ -429,69 +429,83 @@ Current runnable entrypoints:
 
 ### Algo Testing Console
 
-The repo now includes a standalone flat algo-testing console under `ui/scenario-research`.
+The repo now includes a standalone flat structure-testing console under `ui/scenario-research`.
 
 Product posture:
-- fast historical option-behavior query engine, not broker execution
+- fast historical structure-testing engine, not broker execution
 - canonical historical context remains the pricing and comparison truth
-- moneyness and DTE remain first-class comparison dimensions
+- moneyness and DTE remain first-class comparison dimensions at the leg level
 - compact numeric outputs stay in the UI; deeper detail moves to downloadable reports
 
 Current UI flow:
 
-1. Scenario inputs
+1. Strategy selector
+   - `Single Option`
+   - `Long Straddle`
+   - `Short Straddle`
+   - `Long Strangle`
+   - `Short Strangle`
+   - `Bull Call Spread`
+   - `Bear Put Spread`
+   - `Iron Condor`
+   - `Iron Butterfly`
+   - `Custom Multi-Leg`
+2. Dynamic structure inputs
    - underlying
-   - option type
    - expiry type
    - DTE
    - spot
-   - strike / distance from spot
-   - option price
-2. Timeframe analysis
-   - real canonical cohort analysis across `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
-   - average price per window
-   - line chart from long-term to short-term
-   - current price overlay
-3. Compact snapshot summary
-   - total observations
-   - unique contracts
-   - average price
-   - median price
-   - percentile of current price vs selected timeframe
-   - difference vs current price
-4. Simple outcome metrics
-   - decay percentage
-   - next-day average move
-   - expiry average P&L
-5. Strategy testing mode
-   - `Single Option`
-   - `Straddle`
-   - `Strangle`
-   - average premium collected
-   - expiry average value
-   - expiry average P&L
+   - timeframe
+   - per-leg option type, side, strike, distance, and entry price
+3. Compact snapshot
+   - observations
+   - average entry premium
+   - median entry premium
+   - current premium percentile
+   - current structure vs historical average
+   - average expiry value
+   - average P&L
+   - median P&L
    - win rate
-   - max gain / max loss
-6. Report export
-   - downloadable CSV for deeper detail outside the compact UI
+   - best / worst case
+4. Premium trend
+   - structure-level premium windows across `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
+   - average total premium
+   - median premium
+   - current premium overlay
+5. Realized expiry summary
+   - average expiry payout
+   - average seller P&L
+   - average buyer P&L
+   - win rate
+   - tail-loss view
+6. Recommendation summary
+   - `preferred strategy`
+   - `alternative strategy`
+   - `avoid strategy`
+   - clear reasons backed by historical richness, realized P&L, win rate, downside severity, and sample size
+7. Report export
+   - downloadable CSV for matched cases and deeper detail outside the compact UI
 
 Current implementation note:
-- the flat console is wired to canonical DB-backed APIs for timeframe analysis, forward outcomes, and compact strategy metrics
-- the UI is intentionally compact and numeric so it behaves like a practical algo-testing engine rather than a dashboard
-- strategy metrics are currently framed as short-premium outcomes because `premium collected`, `win rate`, and `max gain / max loss` are most coherent under that interpretation
+- the console is now centered on full strategy structure testing rather than a small strategy toggle
+- the UI posts a full multi-leg structure to the backend and receives one compact structure snapshot
+- recommendation ranking is deterministic and transparent; it compares a small candidate set around the same market context rather than acting like a black-box optimizer
 
 Canonical server-backed components:
-- `CanonicalScenarioResolver` resolves UI scenarios into the same cohort vocabulary used by the data platform
-- `TimeframeAnalysisService` backs the multi-window regime comparison layer
-- `ForwardOutcomeCohortService` backs the simple outcome metrics
-- `StrategyAnalysisService` backs the compact strategy-testing mode metrics
+- `CanonicalScenarioResolver` resolves each leg into the same cohort vocabulary used by the data platform
+- `TimeframeAnalysisService` remains available for regime comparison utilities
+- `ForwardOutcomeCohortService` remains available for direct cohort outcome work
+- `StrategyStructureDefinition` models posted multi-leg strategy structures
+- `StrategyAnalysisService` backs structure-level historical testing
+- `StrategyAnalysisCalculator` computes compact structure-level outputs
 - `ResearchConsoleServer` serves the UI and exposes the local research APIs
 
 Current research APIs:
 - `GET /api/fair-value`
 - `GET /api/timeframe-analysis`
 - `GET /api/forward-outcomes`
-- `GET /api/strategy-analysis`
+- `POST /api/strategy-analysis`
 - `GET /api/diagnostics`
 - workflow persistence endpoints remain available for saved studies and collections
 
@@ -569,7 +583,7 @@ Recommended analytics assumption:
 Current repo baseline:
 - the repo contains an expanded historical derivatives archive under `data/bhavcopy/historical/derivatives`
 - historical pricing context and derived tables are aligned to canonical spot-based underlying history
-- `ui/scenario-research` is the current end-to-end flat algo-testing console backed by canonical historical APIs
+- `ui/scenario-research` is the current end-to-end flat structure-testing console backed by canonical historical APIs
 
 ---
 

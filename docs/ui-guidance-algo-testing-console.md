@@ -1,17 +1,18 @@
 # UI Guidance: Algo Testing Console
 
-This document explains every output published by the flat algo-testing console and the functional meaning of each one.
+This document explains every output published by the flat structure-testing console and the functional meaning of each one.
 
 ## Screen intent
 
-The screen is a compact historical strategy-testing tool.
+The screen is a compact historical structure-testing tool.
 
 It is designed to answer:
 
-- what scenario am I querying?
-- how does the same canonical cohort behave across different historical regimes?
-- how does the current price compare with those regimes?
-- what does a compact strategy test look like for this setup?
+- what structure am I querying?
+- how rich or cheap is the current structure versus history?
+- how has comparable structure premium changed across regimes?
+- what did comparable structures actually do at expiry?
+- which nearby strategy shape looks preferred, acceptable, or worth avoiding?
 
 It is not meant to be:
 
@@ -20,6 +21,27 @@ It is not meant to be:
 - a narrative-heavy analytics page
 
 ## Inputs
+
+### Strategy
+
+Published as:
+
+- `Single Option`
+- `Long Straddle`
+- `Short Straddle`
+- `Long Strangle`
+- `Short Strangle`
+- `Bull Call Spread`
+- `Bear Put Spread`
+- `Iron Condor`
+- `Iron Butterfly`
+- `Custom Multi-Leg`
+
+Functional meaning:
+
+- selects the structure template
+- determines whether the tested side is buyer-oriented or seller-oriented
+- controls the dynamic leg set shown in the form
 
 ### Underlying
 
@@ -31,37 +53,7 @@ Published as:
 Functional meaning:
 
 - selects the canonical historical underlying partition
-- determines strike-point bucket sizing and cohort lookup scope
-
-### Option type
-
-Published as:
-
-- `Call`
-- `Put`
-
-Functional meaning:
-
-- selects the option orientation used for canonical cohort resolution
-- drives the single-option leg when strategy mode is `Single Option`
-
-### Strategy mode
-
-Published as:
-
-- `Single Option`
-- `Straddle`
-- `Strangle`
-
-Functional meaning:
-
-- controls how compact strategy metrics are derived from historical comparable setups
-
-Current implementation meaning:
-
-- `Single Option`: one option leg matching the selected orientation
-- `Straddle`: paired CE and PE at the same strike/day/expiry
-- `Strangle`: paired CE and PE wings using symmetric distance buckets around spot
+- determines strike bucket sizing
 
 ### Expiry type
 
@@ -72,8 +64,7 @@ Published as:
 
 Functional meaning:
 
-- selects the option family used in the scenario
-- remains part of the business input posture even though canonical cohort resolution is still anchored primarily by moneyness and time bucket
+- keeps the business input aligned with the option family being tested
 
 ### DTE
 
@@ -83,8 +74,7 @@ Published as:
 
 Functional meaning:
 
-- converted into `time_bucket_15m`
-- anchors the scenario to a comparable historical time-to-expiry state
+- each leg is normalized into canonical time-to-expiry context
 
 ### Spot
 
@@ -94,38 +84,7 @@ Published as:
 
 Functional meaning:
 
-- combined with strike to derive the current moneyness state
-
-### Strike
-
-Published as:
-
-- selected strike price
-
-Functional meaning:
-
-- used with spot to derive distance from spot and canonical moneyness bucket
-
-### Distance from spot
-
-Published as:
-
-- strike minus spot, in points
-
-Functional meaning:
-
-- direct business expression of moneyness
-- normalized into canonical `moneyness_bucket`
-
-### Option price
-
-Published as:
-
-- current option premium
-
-Functional meaning:
-
-- reference point for percentile, difference-vs-current, and timeframe comparisons
+- used with each strike to derive moneyness
 
 ### Timeframe
 
@@ -135,261 +94,225 @@ Published as:
 
 Functional meaning:
 
-- selects the historical regime window used for the selected summary metrics
-- all fixed windows are trailing windows measured backward from the latest available matched historical date
+- selects the active historical regime for the snapshot block
+- fixed windows are trailing windows from the latest matched historical date
 - `Custom` uses explicit date bounds
+
+### Dynamic leg inputs
+
+Published per leg as:
+
+- option type
+- side
+- strike
+- distance from spot
+- entry price
+
+Functional meaning:
+
+- each leg is independently normalized into canonical historical context
+- all legs together define the tested structure
+- entry prices sum into the current total premium
 
 ## Header chips
 
-### Scenario
-
-Published as:
-
-- `UNDERLYING / OPTION_TYPE / EXPIRY_TYPE / DTE`
+### Strategy
 
 Functional meaning:
 
-- quick human-readable identifier of the query being tested
+- quick identifier of the structure being tested
 
-### Cohort
+### Orientation
 
 Published as:
 
-- `UNDERLYING / OPTION_TYPE / TBx / +/-bucket`
+- `Buyer`
+- `Seller`
 
 Functional meaning:
 
-- canonical historical cohort key used by the platform
-- this is the compact expression of how the input scenario is normalized for history lookup
+- identifies which side the main P&L metrics refer to
 
 ### Timeframe
 
-Published as:
+Functional meaning:
 
-- selected window such as `1Y` or a custom date range
+- shows which regime is driving the active snapshot
+
+### Current premium
 
 Functional meaning:
 
-- shows which regime is driving the selected summary and percentile
+- sum of posted leg entry prices
+- reference used in structure percentile and premium-richness comparisons
 
-### Strategy
+## Snapshot block
 
-Published as:
+This is the active structure summary for the selected timeframe.
 
-- current strategy mode label
-
-Functional meaning:
-
-- makes it explicit whether the compact strategy metrics are being evaluated as a single-leg, straddle, or strangle test
-
-## Timeframe analysis block
-
-This block shows how comparable pricing behaves from long-term history into shorter-term history.
-
-### Average price by timeframe
-
-Published as:
-
-- average price for `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
+### Observations
 
 Functional meaning:
 
-- shows whether the matched cohort has become richer or cheaper over time
-- helps identify regime drift rather than treating all history as one blended baseline
+- matched historical structure count behind the summary
 
-### Line chart
-
-Published as:
-
-- long-term to short-term connected line of average prices
+### Avg entry
 
 Functional meaning:
 
-- visual trend of regime pricing
-- rising line suggests the comparable cohort is getting richer into recent history
-- falling line suggests the comparable cohort is getting cheaper into recent history
+- average total entry premium of comparable historical structures
 
-### Current price overlay
-
-Published as:
-
-- horizontal reference line
+### Median entry
 
 Functional meaning:
 
-- shows where today’s premium sits versus the average regime path
-- quickly highlights whether current pricing is above or below most historical windows
+- central structure premium without mean distortion
 
-## Snapshot summary block
-
-This block uses the selected timeframe as the active comparison regime.
-
-### Total observations
-
-Published as:
-
-- matched row count in the selected timeframe
+### Current percentile
 
 Functional meaning:
 
-- sample depth for the selected historical regime
+- percentile rank of the current structure premium inside the selected timeframe
 
-### Unique contracts
-
-Published as:
-
-- number of distinct instruments in the selected timeframe
+### Vs history
 
 Functional meaning:
 
-- breadth of contract coverage behind the summary
-- helps distinguish repeated observations from broader contract diversity
+- current total premium minus historical average entry premium
+- positive means richer than history
+- negative means cheaper than history
 
-### Avg price
-
-Published as:
-
-- average matched premium in the selected timeframe
+### Avg expiry value
 
 Functional meaning:
 
-- main regime-average reference for current-price comparison
+- average realized terminal value of the full structure at expiry
 
-### Median
-
-Published as:
-
-- median matched premium in the selected timeframe
+### Avg P&L
 
 Functional meaning:
 
-- center of the selected regime without mean distortion from tail values
+- average realized P&L for the selected orientation
 
-### Percentile
-
-Published as:
-
-- percentile rank of the current price inside the selected timeframe
+### Median P&L
 
 Functional meaning:
 
-- tells how rich or cheap the current price is relative to the active regime window
-
-Interpretation pattern:
-
-- lower percentile: historically cheaper
-- middle percentile: historically near regime center
-- higher percentile: historically richer
-
-### Vs current
-
-Published as:
-
-- current price minus selected timeframe average
-
-Functional meaning:
-
-- compact richness/cheapness gap in absolute premium terms
-- positive means current is richer than the selected regime average
-- negative means current is cheaper than the selected regime average
-
-## Simple outcome metrics block
-
-This block keeps the forward read compact.
-
-### Decay %
-
-Published as:
-
-- probability of premium decay into expiry from matched history
-
-Functional meaning:
-
-- quick read on whether the comparable setup historically lost premium more often than not into the final path
-
-### Next-day avg move
-
-Published as:
-
-- average next-day premium return
-
-Functional meaning:
-
-- short-horizon directional tendency of the premium after similar setups
-
-### Expiry avg P&L
-
-Published as:
-
-- average expiry-horizon premium return
-
-Functional meaning:
-
-- compact long-path outcome read from matched history
-
-Current implementation note:
-
-- these simple outcome metrics come from the current forward-outcome endpoint and are cohort-based rather than fully timeframe-filtered
-
-## Strategy test block
-
-This block turns the scenario into a compact practical strategy read.
-
-### Avg premium collected
-
-Published as:
-
-- average entry premium across matched historical strategy setups
-
-Functional meaning:
-
-- average credit collected by the tested structure
-
-### Expiry avg value
-
-Published as:
-
-- average final structure value at expiry
-
-Functional meaning:
-
-- average cost to settle or close the tested structure at expiry
-
-### Expiry avg P&L
-
-Published as:
-
-- average profit and loss of the tested structure
-
-Functional meaning:
-
-- compact average edge measure for the selected strategy mode
+- central realized P&L for the selected orientation
 
 ### Win rate
 
-Published as:
+Functional meaning:
 
-- percentage of matched scenarios with positive expiry P&L
+- percentage of comparable historical structures with positive realized P&L
+
+### Best / worst
 
 Functional meaning:
 
-- hit rate of the compact strategy test
+- realized upper and lower P&L bounds seen in matched history
 
-### Max gain / max loss
+## Premium trend block
 
-Published as:
+This shows how comparable structure premium changed from long-term history into recent history.
 
-- best historical observed P&L
-- worst historical observed P&L
+### Avg premium by timeframe
 
 Functional meaning:
 
-- compact realized range of outcomes in matched history
-- meant as a quick risk/reward boundary reference, not as a formal risk model
+- average total premium for `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
 
-Current implementation note:
+### Median premium by timeframe
 
-- these strategy metrics are currently interpreted as short-premium outcomes
+Functional meaning:
+
+- central premium level for each regime
+
+### Vs current by timeframe
+
+Functional meaning:
+
+- current total premium minus the average premium of each regime
+
+### Line chart
+
+Functional meaning:
+
+- visual trend of structure richness from long-term to short-term windows
+
+### Current premium overlay
+
+Functional meaning:
+
+- shows where the live structure sits versus the historical regime path
+
+## Realized expiry block
+
+This keeps the outcome view compact and structure-focused.
+
+### Avg expiry payout
+
+Functional meaning:
+
+- average realized full-structure payout at expiry
+
+### Avg seller P&L
+
+Functional meaning:
+
+- average realized outcome for the seller side
+
+### Avg buyer P&L
+
+Functional meaning:
+
+- average realized outcome for the buyer side
+
+### Win rate
+
+Functional meaning:
+
+- historical positive-outcome rate for the selected side
+
+### Tail loss
+
+Functional meaning:
+
+- tenth-percentile realized P&L for the selected side
+
+### Downside profile
+
+Functional meaning:
+
+- one-line description of the tail-loss shape for the selected side
+
+## Recommendation block
+
+This compares a small candidate set of nearby strategy shapes in the same market context.
+
+### Preferred
+
+Functional meaning:
+
+- highest-ranked candidate based on premium richness, realized P&L, win rate, downside severity, and sample size
+
+### Alternative
+
+Functional meaning:
+
+- viable second-choice candidate
+
+### Avoid
+
+Functional meaning:
+
+- weakest-ranked candidate in the same comparison set
+
+### Reason text
+
+Functional meaning:
+
+- human-readable explanation of why the candidate was ranked there
 
 ## Download report
 
@@ -399,16 +322,15 @@ Published as:
 
 Functional meaning:
 
-- moves deeper detail outside the compact UI
-- provides exportable scenario inputs, timeframe metrics, outcome metrics, and strategy metrics
+- exports the deeper detail that should not clutter the main screen
 
-What belongs in the report rather than on the screen:
+The export includes:
 
-- larger detail tables
-- full timeframe rows
-- deeper diagnostics
-- historical cases
-- extended distribution detail
+- scenario and structure inputs
+- snapshot metrics
+- timeframe premium windows
+- recommendation rows
+- matched historical cases
 
 ## UX rules
 
@@ -420,12 +342,13 @@ The screen should continue to obey these rules:
 - no decorative dashboard panels
 - no trading workflow language
 - no pricing logic recomputed ad hoc in the browser
+- no on-screen matched-case clutter for the main testing flow
 
 ## Functional contract summary
 
 Every output on the screen must remain:
 
-- derived from the platform’s golden-source historical model
+- derived from the platform's golden-source historical model
 - reproducible from historical reload and backfill
 - explainable in compact numeric form
-- suitable for fast algo testing without UI clutter
+- suitable for fast structure testing without UI clutter

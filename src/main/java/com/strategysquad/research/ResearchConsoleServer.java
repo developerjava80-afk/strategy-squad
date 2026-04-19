@@ -255,20 +255,22 @@ public final class ResearchConsoleServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             withCors(exchange.getResponseHeaders());
-            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
                 return;
             }
 
             try {
-                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                Map<String, String> query = "POST".equalsIgnoreCase(exchange.getRequestMethod())
+                        ? parseFormBody(exchange)
+                        : parseQuery(exchange.getRequestURI());
+                StrategyStructureDefinition definition = parseStrategyDefinition(query);
                 StrategyAnalysisSnapshot snapshot = service.loadSnapshot(
-                        FairValueHandler.required(query, "underlying"),
-                        FairValueHandler.required(query, "optionType"),
-                        new BigDecimal(FairValueHandler.required(query, "spot")),
-                        new BigDecimal(FairValueHandler.required(query, "strike")),
-                        Integer.parseInt(FairValueHandler.required(query, "dte")),
-                        query.getOrDefault("mode", "SINGLE_OPTION"),
+                        definition,
                         query.getOrDefault("timeframe", "1Y"),
                         parseLocalDate(query.get("customFrom")),
                         parseLocalDate(query.get("customTo"))
@@ -420,6 +422,33 @@ public final class ResearchConsoleServer {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         URI uri = URI.create("http://localhost/?" + body);
         return parseQuery(uri);
+    }
+
+    private static StrategyStructureDefinition parseStrategyDefinition(Map<String, String> query) {
+        int legCount = Integer.parseInt(FairValueHandler.required(query, "legCount"));
+        if (legCount <= 0) {
+            throw new IllegalArgumentException("Strategy requires at least one leg");
+        }
+        java.util.List<StrategyStructureDefinition.StrategyLeg> legs = new java.util.ArrayList<>();
+        for (int index = 0; index < legCount; index++) {
+            String prefix = "leg" + index;
+            legs.add(new StrategyStructureDefinition.StrategyLeg(
+                    query.getOrDefault(prefix + "Label", "Leg " + (index + 1)),
+                    FairValueHandler.required(query, prefix + "OptionType"),
+                    FairValueHandler.required(query, prefix + "Side"),
+                    new BigDecimal(FairValueHandler.required(query, prefix + "Strike")),
+                    new BigDecimal(FairValueHandler.required(query, prefix + "EntryPrice"))
+            ));
+        }
+        return new StrategyStructureDefinition(
+                query.getOrDefault("mode", "SINGLE_OPTION"),
+                query.getOrDefault("orientation", "BUYER"),
+                FairValueHandler.required(query, "underlying"),
+                query.getOrDefault("expiryType", "WEEKLY"),
+                Integer.parseInt(FairValueHandler.required(query, "dte")),
+                new BigDecimal(FairValueHandler.required(query, "spot")),
+                legs
+        );
     }
 
     private static String toJson(FairValueSnapshot snapshot) {
@@ -595,28 +624,134 @@ public final class ResearchConsoleServer {
     }
 
     private static String toJson(StrategyAnalysisSnapshot snapshot) {
+        String windowsJson = snapshot.premiumWindows().stream()
+                .map(item -> """
+                        {
+                          "label":"%s",
+                          "averageTotalPremium":%.6f,
+                          "medianPremium":%.6f,
+                          "currentVsHistoricalAverage":%.6f,
+                          "observationCount":%d
+                        }
+                        """.formatted(
+                        escapeJson(item.label()),
+                        item.averageTotalPremium(),
+                        item.medianPremium(),
+                        item.currentVsHistoricalAverage(),
+                        item.observationCount()
+                ))
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        String casesJson = snapshot.matchedCases().stream()
+                .map(item -> """
+                        {
+                          "tradeDate":"%s",
+                          "expiryDate":"%s",
+                          "totalEntryPremium":%.6f,
+                          "expiryValue":%.6f,
+                          "selectedPnl":%.6f,
+                          "buyerPnl":%.6f,
+                          "sellerPnl":%.6f
+                        }
+                        """.formatted(
+                        escapeJson(item.tradeDate()),
+                        escapeJson(item.expiryDate()),
+                        item.totalEntryPremium(),
+                        item.expiryValue(),
+                        item.selectedPnl(),
+                        item.buyerPnl(),
+                        item.sellerPnl()
+                ))
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
         return """
                 {
                   "mode":"%s",
+                  "orientation":"%s",
                   "timeframe":"%s",
                   "observationCount":%d,
-                  "averagePremiumCollected":%.6f,
-                  "averageExpiryValue":%.6f,
-                  "averageExpiryPnl":%.6f,
-                  "winRatePct":%.6f,
-                  "maxGain":%.6f,
-                  "maxLoss":%.6f
+                  "currentTotalPremium":%.6f,
+                  "snapshot":{
+                    "averageEntryPremium":%.6f,
+                    "medianEntryPremium":%.6f,
+                    "currentPremiumPercentile":%d,
+                    "currentVsHistoricalAverage":%.6f,
+                    "averageExpiryValue":%.6f,
+                    "averagePnl":%.6f,
+                    "medianPnl":%.6f,
+                    "winRatePct":%.6f,
+                    "bestCase":%.6f,
+                    "worstCase":%.6f
+                  },
+                  "premiumWindows":[%s],
+                  "expiryOutcome":{
+                    "averageExpiryPayout":%.6f,
+                    "averageSellerPnl":%.6f,
+                    "averageBuyerPnl":%.6f,
+                    "winRatePct":%.6f,
+                    "tailLossP10":%.6f,
+                    "downsideProfile":"%s"
+                  },
+                  "recommendation":{
+                    "preferred":%s,
+                    "alternative":%s,
+                    "avoid":%s
+                  },
+                  "matchedCases":[%s]
                 }
                 """.formatted(
                 escapeJson(snapshot.mode()),
+                escapeJson(snapshot.orientation()),
                 escapeJson(snapshot.timeframe()),
                 snapshot.observationCount(),
-                snapshot.averagePremiumCollected(),
-                snapshot.averageExpiryValue(),
-                snapshot.averageExpiryPnl(),
-                snapshot.winRatePct(),
-                snapshot.maxGain(),
-                snapshot.maxLoss()
+                snapshot.currentTotalPremium(),
+                snapshot.snapshot().averageEntryPremium(),
+                snapshot.snapshot().medianEntryPremium(),
+                snapshot.snapshot().currentPremiumPercentile(),
+                snapshot.snapshot().currentVsHistoricalAverage(),
+                snapshot.snapshot().averageExpiryValue(),
+                snapshot.snapshot().averagePnl(),
+                snapshot.snapshot().medianPnl(),
+                snapshot.snapshot().winRatePct(),
+                snapshot.snapshot().bestCase(),
+                snapshot.snapshot().worstCase(),
+                windowsJson,
+                snapshot.expiryOutcome().averageExpiryPayout(),
+                snapshot.expiryOutcome().averageSellerPnl(),
+                snapshot.expiryOutcome().averageBuyerPnl(),
+                snapshot.expiryOutcome().winRatePct(),
+                snapshot.expiryOutcome().tailLossP10(),
+                escapeJson(snapshot.expiryOutcome().downsideProfile()),
+                toJson(snapshot.recommendation().preferred()),
+                toJson(snapshot.recommendation().alternative()),
+                toJson(snapshot.recommendation().avoid()),
+                casesJson
+        );
+    }
+
+    private static String toJson(StrategyAnalysisSnapshot.StrategyRecommendation recommendation) {
+        return """
+                {
+                  "mode":"%s",
+                  "orientation":"%s",
+                  "score":%.6f,
+                  "observationCount":%d,
+                  "premiumVsHistory":%.6f,
+                  "averagePnl":%.6f,
+                  "winRatePct":%.6f,
+                  "downsideSeverity":%.6f,
+                  "reason":"%s"
+                }
+                """.formatted(
+                escapeJson(recommendation.mode()),
+                escapeJson(recommendation.orientation()),
+                recommendation.score(),
+                recommendation.observationCount(),
+                recommendation.premiumVsHistory(),
+                recommendation.averagePnl(),
+                recommendation.winRatePct(),
+                recommendation.downsideSeverity(),
+                escapeJson(recommendation.reason())
         );
     }
 
