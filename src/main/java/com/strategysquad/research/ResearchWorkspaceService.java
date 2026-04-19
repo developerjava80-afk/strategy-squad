@@ -63,7 +63,7 @@ public class ResearchWorkspaceService {
     }
 
     public ResearchWorkspaceSnapshot loadWorkspace() throws SQLException {
-        try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "admin", "quest")) {
             ensureDefaultCollection(connection);
             List<ResearchCollection> collections = listCollections(connection);
             Map<String, String> collectionNames = new LinkedHashMap<>();
@@ -78,7 +78,7 @@ public class ResearchWorkspaceService {
     public ResearchCollection createCollection(String name, String description) throws SQLException {
         String collectionId = "collection-" + UUID.randomUUID().toString().replace("-", "");
         Instant createdAt = Instant.now();
-        try (Connection connection = DriverManager.getConnection(jdbcUrl);
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "admin", "quest");
              PreparedStatement statement = connection.prepareStatement(INSERT_COLLECTION_SQL)) {
             statement.setTimestamp(1, Timestamp.from(createdAt));
             statement.setString(2, collectionId);
@@ -90,7 +90,7 @@ public class ResearchWorkspaceService {
     }
 
     public void saveScenario(ResearchScenarioSnapshot snapshot) throws SQLException {
-        try (Connection connection = DriverManager.getConnection(jdbcUrl);
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "admin", "quest");
              PreparedStatement statement = connection.prepareStatement(INSERT_SCENARIO_SQL)) {
             statement.setTimestamp(1, Timestamp.from(snapshot.savedAt()));
             statement.setString(2, snapshot.snapshotId());

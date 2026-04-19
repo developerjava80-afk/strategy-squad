@@ -427,66 +427,73 @@ Current runnable entrypoints:
 - `HistoricalLoadMain` reloads `instrument_master`, `options_historical`, and `spot_historical`.
 - `HistoricalDerivedBackfillMain` rebuilds `options_enriched`, `options_15m_buckets`, `options_context_buckets`, and `pcr_historical`.
 
-### Scenario Research Console
+### Algo Testing Console
 
-The repo now includes a standalone Scenario Research workstation under `ui/scenario-research`.
+The repo now includes a standalone flat algo-testing console under `ui/scenario-research`.
 
 Product posture:
-- historical opportunity evaluation, not broker execution
+- fast historical option-behavior query engine, not broker execution
 - canonical historical context remains the pricing and comparison truth
-- moneyness and DTE are first-class research dimensions
-- analytical panels are interpretation layers over canonical cohorts, not disconnected calculators
+- moneyness and DTE remain first-class comparison dimensions
+- compact numeric outputs stay in the UI; deeper detail moves to downloadable reports
 
-Delivered sequence:
+Current UI flow:
 
-1. Scenario Research Experience
-   - business-input scenario builder for underlying, option type, expiry family, DTE, spot, strike, distance from spot, option price, and optional activity framing
-   - derived context preview showing how the platform normalizes the scenario into canonical moneyness and DTE buckets
-2. Historical Fair Value and Context Lens
-   - cheap / fair / rich / extreme valuation framing
-   - historical distribution positioning
-   - sample-strength context
-3. Forward Outcome Explorer
-   - next-day, short-horizon, and expiry-horizon outcome tendencies
-   - long-premium / short-premium / no-trade posture framing
-4. Diagnostics, Confidence, and Historical Case Explorer
-   - cohort size, concentration, sparsity warnings, coverage, and representative comparable cases
-5. Research Workflow, Comparison, and Opportunity Decision Layer
-   - saved studies
-   - side-by-side comparison board
-   - reloadable prior research
-   - research collections
-   - opportunity buckets (`attractive`, `uncertain`, `unattractive`)
-   - DB-backed workstation persistence for iterative discovery
+1. Scenario inputs
+   - underlying
+   - option type
+   - expiry type
+   - DTE
+   - spot
+   - strike / distance from spot
+   - option price
+2. Timeframe analysis
+   - real canonical cohort analysis across `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
+   - average price per window
+   - line chart from long-term to short-term
+   - current price overlay
+3. Compact snapshot summary
+   - total observations
+   - unique contracts
+   - average price
+   - median price
+   - percentile of current price vs selected timeframe
+   - difference vs current price
+4. Simple outcome metrics
+   - decay percentage
+   - next-day average move
+   - expiry average P&L
+5. Strategy testing mode
+   - `Single Option`
+   - `Straddle`
+   - `Strangle`
+   - average premium collected
+   - expiry average value
+   - expiry average P&L
+   - win rate
+   - max gain / max loss
+6. Report export
+   - downloadable CSV for deeper detail outside the compact UI
 
 Current implementation note:
-- The Scenario Research console is now wired to canonical DB-backed cohort resolution, fair value, forward outcomes, diagnostics, representative cases, and workflow persistence.
-- Saved studies persist canonical historical outputs so scenario review remains reproducible and aligned with the golden-source model.
-- The workstation is still intentionally a research console, not an execution surface. It does not place trades or act like a broker UI.
-
-Research console execution order now implemented:
-
-1. Scenario -> Cohort Resolution
-   - user-defined business inputs resolve into the canonical historical cohort model
-   - cohort key shape: `underlying + option_type + time_bucket_15m + moneyness_bucket`
-2. Fair Value Engine
-   - reads actual historical cohort observations from `options_enriched`
-   - computes distribution, central tendency, percentile bands, and current-price position
-3. Forward Outcome Engine
-   - reads matched historical observations and measures next-day and expiry premium behavior
-   - translates cohort history into long-premium / short-premium / no-clear-edge framing
-4. Diagnostics & Transparency
-   - exposes evidence depth, coverage, concentration, sparsity warnings, and representative comparable cases
-5. Research Workflow Persistence
-   - persists saved scenario studies, collections, and attached historical analysis snapshots in QuestDB-backed workflow tables
+- the flat console is wired to canonical DB-backed APIs for timeframe analysis, forward outcomes, and compact strategy metrics
+- the UI is intentionally compact and numeric so it behaves like a practical algo-testing engine rather than a dashboard
+- strategy metrics are currently framed as short-premium outcomes because `premium collected`, `win rate`, and `max gain / max loss` are most coherent under that interpretation
 
 Canonical server-backed components:
 - `CanonicalScenarioResolver` resolves UI scenarios into the same cohort vocabulary used by the data platform
-- `FairValueCohortService` backs the valuation layer
-- `ForwardOutcomeCohortService` backs the opportunity layer
-- `DiagnosticsCohortService` backs confidence, warnings, and representative match retrieval
-- `ResearchWorkspaceService` persists collections and saved scenario artifacts
+- `TimeframeAnalysisService` backs the multi-window regime comparison layer
+- `ForwardOutcomeCohortService` backs the simple outcome metrics
+- `StrategyAnalysisService` backs the compact strategy-testing mode metrics
 - `ResearchConsoleServer` serves the UI and exposes the local research APIs
+
+Current research APIs:
+- `GET /api/fair-value`
+- `GET /api/timeframe-analysis`
+- `GET /api/forward-outcomes`
+- `GET /api/strategy-analysis`
+- `GET /api/diagnostics`
+- workflow persistence endpoints remain available for saved studies and collections
 
 Completed in code:
 
@@ -562,7 +569,7 @@ Recommended analytics assumption:
 Current repo baseline:
 - the repo contains an expanded historical derivatives archive under `data/bhavcopy/historical/derivatives`
 - historical pricing context and derived tables are aligned to canonical spot-based underlying history
-- `ui/scenario-research` is the current end-to-end research-console shell for future DB-backed analytics wiring
+- `ui/scenario-research` is the current end-to-end flat algo-testing console backed by canonical historical APIs
 
 ---
 

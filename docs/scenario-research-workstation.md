@@ -1,13 +1,14 @@
 # Scenario Research Workstation
 
-This document captures the current research-console implementation and how it stays aligned to the platform's golden-source historical model.
+This document captures the current algo-testing console implementation and how it stays aligned to the platform's golden-source historical model.
 
 ## Product posture
 
-- The UI is a historical research workstation, not a trading or order-entry screen.
+- The UI is a flat historical algo-testing console, not a trading or order-entry screen.
 - Every analytical conclusion must come from canonical historical cohorts and DB-backed derived outputs.
 - Moneyness and time-to-expiry are the primary comparison dimensions.
-- Saved research artifacts must remain reproducible through historical reload, backfill, and replay.
+- The visible screen stays compact and numeric.
+- Deeper detail belongs in downloadable reports, not in dashboard clutter.
 
 ## Implemented execution order
 
@@ -54,7 +55,29 @@ The fair-value layer computes:
 
 Pricing truth remains anchored to canonical enriched history. PCR is not used as fair-value truth.
 
-### 3. Forward Outcome Engine
+### 3. Timeframe Analysis Layer
+
+The current UI uses a timeframe-first regime comparison layer so users can see whether pricing is getting richer or cheaper over time.
+
+Key components:
+
+- `src/main/java/com/strategysquad/research/TimeframeAnalysisService.java`
+- `src/main/java/com/strategysquad/research/TimeframeAnalysisSnapshot.java`
+- `src/main/java/com/strategysquad/research/TimeframeAnalysisSnapshotCalculator.java`
+- API: `GET /api/timeframe-analysis`
+
+The layer computes:
+
+- average price across `5Y`, `2Y`, `1Y`, `6M`, `3M`, `1M`
+- median price for the selected timeframe
+- observation count for each timeframe
+- unique contract count for the selected timeframe
+- percentile of current price vs the selected timeframe
+- difference between current price and timeframe average
+
+This is the primary compact regime-comparison layer in the current UI.
+
+### 4. Forward Outcome Engine
 
 The opportunity layer measures what actually happened after comparable historical setups.
 
@@ -77,7 +100,37 @@ The engine computes:
 
 This layer uses historical observations only. It does not use static posture rules as truth.
 
-### 4. Diagnostics & Transparency
+### 5. Strategy Testing Mode
+
+The console now supports compact strategy testing without turning the UI into a large research dashboard.
+
+Key components:
+
+- `src/main/java/com/strategysquad/research/StrategyAnalysisService.java`
+- `src/main/java/com/strategysquad/research/StrategyAnalysisSnapshot.java`
+- `src/main/java/com/strategysquad/research/StrategyAnalysisCalculator.java`
+- API: `GET /api/strategy-analysis`
+
+Supported modes:
+
+- `Single Option`
+- `Straddle`
+- `Strangle`
+
+Published compact metrics:
+
+- average premium collected
+- expiry average value
+- expiry average P&L
+- win rate
+- max gain
+- max loss
+
+Current modeling note:
+
+- these metrics are evaluated as short-premium outcomes because the published fields are intended for premium-selling style strategy testing
+
+### 6. Diagnostics & Transparency
 
 The trust layer shows whether the historical conclusion is actually supported by enough evidence.
 
@@ -89,7 +142,7 @@ Key components:
 - `src/main/java/com/strategysquad/research/MatchedHistoricalObservation.java`
 - API: `GET /api/diagnostics`
 
-The diagnostics layer exposes:
+The diagnostics layer still exists server-side and remains available for export/report use. It exposes:
 
 - cohort size
 - unique instrument count
@@ -102,7 +155,7 @@ The diagnostics layer exposes:
 
 Representative historical cases are drawn from actual cohort matches so users can audit why the system considers them comparable.
 
-### 5. Research Workflow Persistence
+### 7. Research Workflow Persistence
 
 The workstation now persists workflow state in DB-backed tables instead of browser-only storage.
 
@@ -133,6 +186,18 @@ Persisted workflow behavior:
 - reload saved studies into the builder
 - compare live and saved studies using persisted historical outputs
 - keep recommendation buckets tied to stored historical evidence
+
+## Current visible UI
+
+The current UI under `ui/scenario-research` intentionally publishes only compact outputs:
+
+- timeframe trend
+- snapshot summary
+- simple outcome metrics
+- strategy test metrics
+- downloadable CSV report
+
+Large exploratory sections such as case explorers, deep diagnostics, and extended narrative panels are no longer part of the main visible screen.
 
 ## Reproducibility contract
 
@@ -189,6 +254,15 @@ Then open:
 
 - `http://localhost:8080`
 
+Available current APIs:
+
+- `GET /api/fair-value`
+- `GET /api/timeframe-analysis`
+- `GET /api/forward-outcomes`
+- `GET /api/strategy-analysis`
+- `GET /api/diagnostics`
+- workflow persistence endpoints under `/api/workflow/*`
+
 ## Validation status
 
 Current local validation completed for the implementation:
@@ -202,3 +276,4 @@ Current local validation completed for the implementation:
 - No broker workflow
 - No pricing logic scattered into downstream UI-only calculations
 - No weakening of replayability or determinism
+- No return to a cluttered dashboard-style interface for core testing flows

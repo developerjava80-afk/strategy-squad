@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -32,17 +33,24 @@ public final class ResearchConsoleServer {
     }
 
     public static void main(String[] args) throws IOException {
+        try { Class.forName("org.postgresql.Driver"); } catch (ClassNotFoundException e) {
+            throw new RuntimeException("PostgreSQL JDBC driver not on classpath", e);
+        }
         int port = args.length >= 1 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
         String jdbcUrl = args.length >= 2 ? args[1] : DEFAULT_JDBC_URL;
         Path uiRoot = Path.of("ui", "scenario-research").toAbsolutePath().normalize();
         FairValueCohortService service = new FairValueCohortService(jdbcUrl);
+        TimeframeAnalysisService timeframeAnalysisService = new TimeframeAnalysisService(jdbcUrl);
         ForwardOutcomeCohortService forwardOutcomeService = new ForwardOutcomeCohortService(jdbcUrl);
+        StrategyAnalysisService strategyAnalysisService = new StrategyAnalysisService(jdbcUrl);
         DiagnosticsCohortService diagnosticsService = new DiagnosticsCohortService(jdbcUrl);
         ResearchWorkspaceService workspaceService = new ResearchWorkspaceService(jdbcUrl);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/fair-value", new FairValueHandler(service));
+        server.createContext("/api/timeframe-analysis", new TimeframeAnalysisHandler(timeframeAnalysisService));
         server.createContext("/api/forward-outcomes", new ForwardOutcomeHandler(forwardOutcomeService));
+        server.createContext("/api/strategy-analysis", new StrategyAnalysisHandler(strategyAnalysisService));
         server.createContext("/api/diagnostics", new DiagnosticsHandler(diagnosticsService));
         server.createContext("/api/workflow/collections", new WorkflowCollectionsHandler(workspaceService));
         server.createContext("/api/workflow/studies/", new WorkflowStudyHandler(workspaceService));
@@ -194,6 +202,82 @@ public final class ResearchConsoleServer {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             } catch (SQLException exception) {
                 sendJson(exchange, 500, "{\"error\":\"Unable to query forward historical outcomes\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class TimeframeAnalysisHandler implements HttpHandler {
+        private final TimeframeAnalysisService service;
+
+        private TimeframeAnalysisHandler(TimeframeAnalysisService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+
+            try {
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                TimeframeAnalysisSnapshot snapshot = service.loadSnapshot(
+                        FairValueHandler.required(query, "underlying"),
+                        FairValueHandler.required(query, "optionType"),
+                        new BigDecimal(FairValueHandler.required(query, "spot")),
+                        new BigDecimal(FairValueHandler.required(query, "strike")),
+                        Integer.parseInt(FairValueHandler.required(query, "dte")),
+                        new BigDecimal(FairValueHandler.required(query, "optionPrice")),
+                        query.getOrDefault("timeframe", "1Y"),
+                        parseLocalDate(query.get("customFrom")),
+                        parseLocalDate(query.get("customTo"))
+                );
+                sendJson(exchange, 200, toJson(snapshot));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to query timeframe analysis\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class StrategyAnalysisHandler implements HttpHandler {
+        private final StrategyAnalysisService service;
+
+        private StrategyAnalysisHandler(StrategyAnalysisService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+
+            try {
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                StrategyAnalysisSnapshot snapshot = service.loadSnapshot(
+                        FairValueHandler.required(query, "underlying"),
+                        FairValueHandler.required(query, "optionType"),
+                        new BigDecimal(FairValueHandler.required(query, "spot")),
+                        new BigDecimal(FairValueHandler.required(query, "strike")),
+                        Integer.parseInt(FairValueHandler.required(query, "dte")),
+                        query.getOrDefault("mode", "SINGLE_OPTION"),
+                        query.getOrDefault("timeframe", "1Y"),
+                        parseLocalDate(query.get("customFrom")),
+                        parseLocalDate(query.get("customTo"))
+                );
+                sendJson(exchange, 200, toJson(snapshot));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to query strategy analysis\",\"details\":\""
                         + escapeJson(exception.getMessage()) + "\"}");
             }
         }
@@ -446,6 +530,96 @@ public final class ResearchConsoleServer {
         );
     }
 
+    private static String toJson(TimeframeAnalysisSnapshot snapshot) {
+        String windowsJson = snapshot.windows().stream()
+                .map(item -> """
+                        {
+                          "label":"%s",
+                          "averagePrice":%.6f,
+                          "medianPrice":%.6f,
+                          "observationCount":%d,
+                          "uniqueContracts":%d,
+                          "percentile":%d,
+                          "differenceVsCurrent":%.6f
+                        }
+                        """.formatted(
+                        escapeJson(item.label()),
+                        item.averagePrice(),
+                        item.medianPrice(),
+                        item.observationCount(),
+                        item.uniqueContracts(),
+                        item.percentile(),
+                        item.differenceVsCurrent()
+                ))
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        return """
+                {
+                  "cohort": {
+                    "underlying": "%s",
+                    "optionType": "%s",
+                    "timeBucket15m": %d,
+                    "moneynessBucket": %d,
+                    "estimatedMinutesToExpiry": %d
+                  },
+                  "anchorDate":"%s",
+                  "currentOptionPrice":%.6f,
+                  "windows":[%s],
+                  "selectedWindow":{
+                    "label":"%s",
+                    "averagePrice":%.6f,
+                    "medianPrice":%.6f,
+                    "observationCount":%d,
+                    "uniqueContracts":%d,
+                    "percentile":%d,
+                    "differenceVsCurrent":%.6f
+                  }
+                }
+                """.formatted(
+                escapeJson(snapshot.cohort().underlying()),
+                escapeJson(snapshot.cohort().optionType()),
+                snapshot.cohort().timeBucket15m(),
+                snapshot.cohort().moneynessBucket(),
+                snapshot.cohort().estimatedMinutesToExpiry(),
+                escapeJson(snapshot.anchorDate()),
+                snapshot.currentOptionPrice(),
+                windowsJson,
+                escapeJson(snapshot.selectedWindow().label()),
+                snapshot.selectedWindow().averagePrice(),
+                snapshot.selectedWindow().medianPrice(),
+                snapshot.selectedWindow().observationCount(),
+                snapshot.selectedWindow().uniqueContracts(),
+                snapshot.selectedWindow().percentile(),
+                snapshot.selectedWindow().differenceVsCurrent()
+        );
+    }
+
+    private static String toJson(StrategyAnalysisSnapshot snapshot) {
+        return """
+                {
+                  "mode":"%s",
+                  "timeframe":"%s",
+                  "observationCount":%d,
+                  "averagePremiumCollected":%.6f,
+                  "averageExpiryValue":%.6f,
+                  "averageExpiryPnl":%.6f,
+                  "winRatePct":%.6f,
+                  "maxGain":%.6f,
+                  "maxLoss":%.6f
+                }
+                """.formatted(
+                escapeJson(snapshot.mode()),
+                escapeJson(snapshot.timeframe()),
+                snapshot.observationCount(),
+                snapshot.averagePremiumCollected(),
+                snapshot.averageExpiryValue(),
+                snapshot.averageExpiryPnl(),
+                snapshot.winRatePct(),
+                snapshot.maxGain(),
+                snapshot.maxLoss()
+        );
+    }
+
     private static String toJson(DiagnosticsSnapshot snapshot) {
         String warningsJson = snapshot.warnings().stream()
                 .map(item -> "\"" + escapeJson(item) + "\"")
@@ -676,6 +850,10 @@ public final class ResearchConsoleServer {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private static LocalDate parseLocalDate(String value) {
+        return value == null || value.isBlank() ? null : LocalDate.parse(value);
     }
 
     private static String escapeJson(String value) {

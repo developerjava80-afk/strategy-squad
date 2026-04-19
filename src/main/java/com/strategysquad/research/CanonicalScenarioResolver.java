@@ -22,7 +22,7 @@ public final class CanonicalScenarioResolver {
         String normalizedUnderlying = normalizeRequired(underlying);
         String normalizedOptionType = normalizeRequired(optionType);
         BigDecimal distance = strike.subtract(spot);
-        int bucketSize = "BANKNIFTY".equals(normalizedUnderlying) ? 100 : 50;
+        int bucketSize = 50;
         int moneynessBucket = distance
                 .divide(BigDecimal.valueOf(bucketSize), 0, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(bucketSize))
@@ -40,9 +40,13 @@ public final class CanonicalScenarioResolver {
 
     public static int estimatedMinutesToExpiry(int dte) {
         if (dte <= 0) {
-            return 45;
+            return 0;
         }
-        return dte * 375;
+        // Calendar-minute estimate matching the enricher's computation.
+        // EOD bhavcopy exchange_ts is at 10:00 IST (04:30 UTC).
+        // Effective expiry is at 18:30 IST (13:00 UTC) on the day before nominal expiry.
+        // Each calendar day adds 1440 minutes; the base offset on DTE=1 is 510 minutes.
+        return (dte - 1) * 1440 + 510;
     }
 
     private static String normalizeRequired(String value) {

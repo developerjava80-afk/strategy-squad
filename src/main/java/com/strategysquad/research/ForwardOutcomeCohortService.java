@@ -6,38 +6,30 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Loads matched historical cohort rows and computes forward premium behavior from real observations.
  */
 public class ForwardOutcomeCohortService {
     private static final String DEFAULT_JDBC_URL = "jdbc:postgresql://localhost:8812/qdb";
-    private static final String FORWARD_OUTCOME_SQL = """
-            SELECT curr.last_price AS entry_price,
-                   (
-                       SELECT next_tick.last_price
-                       FROM options_enriched next_tick
-                       WHERE next_tick.instrument_id = curr.instrument_id
-                         AND next_tick.exchange_ts > curr.exchange_ts
-                       ORDER BY next_tick.exchange_ts ASC
-                       LIMIT 1
-                   ) AS next_price,
-                   (
-                       SELECT expiry_tick.last_price
-                       FROM options_enriched expiry_tick
-                       WHERE expiry_tick.instrument_id = curr.instrument_id
-                       ORDER BY expiry_tick.exchange_ts DESC
-                       LIMIT 1
-                   ) AS expiry_price
-            FROM options_enriched curr
-            WHERE curr.underlying = ?
-              AND curr.option_type = ?
-              AND curr.time_bucket_15m = ?
-              AND curr.moneyness_bucket = ?
+    private static final String COHORT_SQL = """
+            SELECT instrument_id, exchange_ts, last_price
+            FROM options_enriched
+            WHERE underlying = ?
+              AND option_type = ?
+              AND time_bucket_15m BETWEEN ? AND ?
+              AND moneyness_bucket = ?
             """;
+    private static final Pattern INSTRUMENT_ID_PATTERN = Pattern.compile("INS_[A-Z]+_\\d{8}_\\d+_[A-Z]+");
 
     private final String jdbcUrl;
 
@@ -57,35 +49,95 @@ public class ForwardOutcomeCohortService {
             int dte
     ) throws SQLException {
         CanonicalCohortKey cohort = CanonicalScenarioResolver.resolve(underlying, optionType, spot, strike, dte);
-        List<Double> nextDayReturns = new ArrayList<>();
-        List<Double> expiryReturns = new ArrayList<>();
+        int bucketLo = Math.max(0, cohort.timeBucket15m() - 96);
+        int bucketHi = cohort.timeBucket15m() + 96;
 
-        try (Connection connection = DriverManager.getConnection(jdbcUrl);
-             PreparedStatement statement = connection.prepareStatement(FORWARD_OUTCOME_SQL)) {
-            statement.setString(1, cohort.underlying());
-            statement.setString(2, cohort.optionType());
-            statement.setInt(3, cohort.timeBucket15m());
-            statement.setInt(4, cohort.moneynessBucket());
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    double entryPrice = rs.getDouble("entry_price");
-                    if (entryPrice <= 0) {
-                        continue;
-                    }
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "admin", "quest")) {
+            List<CohortMatch> matches = new ArrayList<>();
+            Set<String> instrumentIds = new LinkedHashSet<>();
 
-                    double nextPrice = rs.getDouble("next_price");
-                    if (!rs.wasNull()) {
-                        nextDayReturns.add(((nextPrice - entryPrice) / entryPrice) * 100.0d);
-                    }
-
-                    double expiryPrice = rs.getDouble("expiry_price");
-                    if (!rs.wasNull()) {
-                        expiryReturns.add(((expiryPrice - entryPrice) / entryPrice) * 100.0d);
+            try (PreparedStatement ps = connection.prepareStatement(COHORT_SQL)) {
+                ps.setString(1, cohort.underlying());
+                ps.setString(2, cohort.optionType());
+                ps.setInt(3, bucketLo);
+                ps.setInt(4, bucketHi);
+                ps.setInt(5, cohort.moneynessBucket());
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String id = rs.getString("instrument_id");
+                        Instant ts = rs.getTimestamp("exchange_ts").toInstant();
+                        double price = rs.getDouble("last_price");
+                        matches.add(new CohortMatch(id, ts, price));
+                        instrumentIds.add(id);
                     }
                 }
             }
-        }
 
-        return ForwardOutcomeSnapshotCalculator.calculate(cohort, nextDayReturns, expiryReturns);
+            if (matches.isEmpty()) {
+                return ForwardOutcomeSnapshotCalculator.calculate(cohort, List.of(), List.of());
+            }
+
+            Map<String, List<PriceTick>> series = loadInstrumentSeries(connection, instrumentIds);
+
+            List<Double> nextDayReturns = new ArrayList<>();
+            List<Double> expiryReturns = new ArrayList<>();
+            for (CohortMatch match : matches) {
+                if (match.entryPrice <= 0) continue;
+                List<PriceTick> ticks = series.getOrDefault(match.instrumentId, List.of());
+                Double nextPrice = findNextPrice(ticks, match.exchangeTs);
+                if (nextPrice != null) {
+                    nextDayReturns.add(((nextPrice - match.entryPrice) / match.entryPrice) * 100.0d);
+                }
+                Double expiryPrice = findExpiryPrice(ticks);
+                if (expiryPrice != null) {
+                    expiryReturns.add(((expiryPrice - match.entryPrice) / match.entryPrice) * 100.0d);
+                }
+            }
+
+            return ForwardOutcomeSnapshotCalculator.calculate(cohort, nextDayReturns, expiryReturns);
+        }
     }
+
+    private Map<String, List<PriceTick>> loadInstrumentSeries(
+            Connection connection, Set<String> instrumentIds
+    ) throws SQLException {
+        StringBuilder sql = new StringBuilder(
+                "SELECT instrument_id, exchange_ts, last_price FROM options_enriched WHERE instrument_id IN (");
+        boolean first = true;
+        for (String id : instrumentIds) {
+            if (!INSTRUMENT_ID_PATTERN.matcher(id).matches()) {
+                throw new IllegalStateException("Invalid instrument_id format: " + id);
+            }
+            if (!first) sql.append(',');
+            sql.append('\'').append(id).append('\'');
+            first = false;
+        }
+        sql.append(") ORDER BY instrument_id, exchange_ts");
+
+        Map<String, List<PriceTick>> map = new LinkedHashMap<>();
+        try (PreparedStatement ps = connection.prepareStatement(sql.toString());
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                map.computeIfAbsent(rs.getString("instrument_id"), k -> new ArrayList<>())
+                        .add(new PriceTick(rs.getTimestamp("exchange_ts").toInstant(), rs.getDouble("last_price")));
+            }
+        }
+        return map;
+    }
+
+    private static Double findNextPrice(List<PriceTick> ticks, Instant afterTs) {
+        for (PriceTick tick : ticks) {
+            if (tick.ts.isAfter(afterTs)) {
+                return tick.price;
+            }
+        }
+        return null;
+    }
+
+    private static Double findExpiryPrice(List<PriceTick> ticks) {
+        return ticks.isEmpty() ? null : ticks.get(ticks.size() - 1).price;
+    }
+
+    private record CohortMatch(String instrumentId, Instant exchangeTs, double entryPrice) {}
+    private record PriceTick(Instant ts, double price) {}
 }
