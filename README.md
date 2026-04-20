@@ -525,6 +525,83 @@ Current research APIs:
 - `GET /api/diagnostics`
 - workflow persistence endpoints remain available for saved studies and collections
 
+### Live Kite Overlay
+
+The repo now includes a live-session overlay path for Zerodha Kite that preserves the canonical historical boundary.
+
+Live design boundary:
+- live ticks persist into `spot_live`, `options_live`, and `options_live_enriched`
+- live 15-minute session aggregates persist into `options_live_15m`
+- current structure snapshots persist into `live_structure_snapshot`
+- historical fair-value and strategy-context truth still comes only from the canonical historical tables and services
+- live mode is an overlay on top of historical research, not a replacement for it
+
+Runtime components:
+- `KiteInstrumentsDumpJob` refreshes the current NFO option universe into `instrument_master`
+- `KiteTickerSession` polls Kite `/quote` and writes live raw + enriched data into isolated live tables
+- `Live15mAggregator` maintains current-session rolling 15-minute buckets
+- `LiveMarketService` resolves user-defined structures into current live contracts, computes live structure premiums, materializes snapshots, and compares live structures against canonical history
+- `KiteLiveConsoleMain` boots the console with live endpoints enabled
+- `LiveSchemaBootstrapper` ensures the live-session tables exist before live ingestion starts
+
+Live migration:
+- apply `db/migration/V004__live_session_tables.sql`
+
+Live entrypoint:
+
+```bash
+mvn -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
+    -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain \
+    -Dexec.args="kite.properties"
+```
+
+Expected `kite.properties` keys:
+- `kite.api.key`
+- `kite.api.secret`
+- `kite.user.id`
+- optional: `kite.access.token`
+- optional: `kite.jdbc.url`
+- optional: `kite.console.port`
+- optional strike-window and expiry-subscription settings from `KiteLiveConfig`
+
+Recommended setup:
+- copy `kite.properties.example` to local ignored `kite.properties`
+- fill `kite.api.key`, `kite.api.secret`, and `kite.user.id`
+- leave `kite.access.token` blank unless you intentionally want a bootstrap token path
+
+Daily login flow:
+- start the console with `scripts\start-research-console.bat` or `KiteLiveConsoleMain`
+- open `http://localhost:8080/login.html`
+- click `Open Zerodha Kite Login`
+- complete the Kite Connect login flow for the same app as `kite.api.key`
+- paste the returned `request_token`, or let `login.html` auto-capture it if your Kite app redirect URL points back to that page
+- the backend exchanges the `request_token` using `kite.api.secret`, saves the day-scoped `access_token` into local `kite.local.properties`, and reuses it for the rest of the day
+
+Daily login behavior:
+- when no valid token exists for the current trading day, the UI opens a login screen
+- the user logs in to Zerodha Kite, obtains a `request_token`, and the backend exchanges it using `api_key + api_secret`
+- the first successful login of the day saves the resulting `access_token` into local ignored file `kite.local.properties`
+- the live console reuses that token for the rest of the day
+- if the token expires, the login screen is shown again
+
+Live APIs added when booted through `KiteLiveConsoleMain`:
+- `GET /api/live/status`
+- `GET /api/live/spot`
+- `POST /api/live/structure`
+- `POST /api/live/structure-trend`
+- `POST /api/live/overlay`
+
+Live feed correctness notes:
+- raw live DB writes use native `DOUBLE` bindings for QuestDB compatibility; `BigDecimal -> DOUBLE` writes on the PG wire are not relied on
+- current live option-universe selection uses fresh Kite spot quotes for ATM baseline rather than stale historical spot
+- current weekly/monthly live expiries are derived from the live NFO dump itself rather than hard-coded weekday assumptions
+- the current Kite CSV parser normalizes quoted fields such as `"NIFTY"` so index option rows are actually admitted into the live universe
+- the UI live overlay hydrates the selected underlying spot and per-leg live option prices back into the dynamic input form when quotes are available
+
+Current transport note:
+- the current repo implementation uses Kite `/quote` polling every 2 seconds rather than the Kite WebSocket SDK
+- the architectural boundary remains the same: live transport feeds isolated live raw tables and then overlays canonical historical comparison on top
+
 Completed in code:
 
 - UDiFF-aware filters for options (`IDO`) and derivative fallback rows (`IDF`)

@@ -33,7 +33,7 @@ class SpotLiveWriterTest {
                 1, Timestamp.from(tick.exchangeTs()),
                 2, Timestamp.from(tick.ingestTs()),
                 3, "NIFTY",
-                4, new BigDecimal("24210.15")
+                4, 24210.15d
         )), statementRecorder.batchParameters());
     }
 }

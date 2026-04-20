@@ -1,5 +1,8 @@
 package com.strategysquad.research;
 
+import com.strategysquad.ingestion.kite.KiteAuthStatus;
+import com.strategysquad.ingestion.kite.KiteLiveSessionManager;
+import com.strategysquad.ingestion.live.session.LiveStatusReport;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -17,6 +20,7 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -38,7 +42,22 @@ public final class ResearchConsoleServer {
         }
         int port = args.length >= 1 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
         String jdbcUrl = args.length >= 2 ? args[1] : DEFAULT_JDBC_URL;
-        Path uiRoot = Path.of("ui", "scenario-research").toAbsolutePath().normalize();
+        startServer(
+                port,
+                jdbcUrl,
+                Path.of("ui", "scenario-research").toAbsolutePath().normalize(),
+                null,
+                null
+        );
+    }
+
+    public static HttpServer startServer(
+            int port,
+            String jdbcUrl,
+            Path uiRoot,
+            LiveMarketService liveMarketService,
+            KiteLiveSessionManager kiteLiveSessionManager
+    ) throws IOException {
         FairValueCohortService service = new FairValueCohortService(jdbcUrl);
         TimeframeAnalysisService timeframeAnalysisService = new TimeframeAnalysisService(jdbcUrl);
         ForwardOutcomeCohortService forwardOutcomeService = new ForwardOutcomeCohortService(jdbcUrl);
@@ -55,12 +74,30 @@ public final class ResearchConsoleServer {
         server.createContext("/api/workflow/collections", new WorkflowCollectionsHandler(workspaceService));
         server.createContext("/api/workflow/studies/", new WorkflowStudyHandler(workspaceService));
         server.createContext("/api/workflow/studies", new WorkflowStudiesHandler(workspaceService));
+        if (liveMarketService != null) {
+            server.createContext("/api/live/status", new LiveStatusHandler(liveMarketService));
+            server.createContext("/api/live/spot", new LiveSpotHandler(liveMarketService));
+            server.createContext("/api/live/structure", new LiveStructureHandler(liveMarketService));
+            server.createContext("/api/live/structure-trend", new LiveStructureTrendHandler(liveMarketService));
+            server.createContext("/api/live/overlay", new LiveOverlayHandler(liveMarketService));
+        }
+        if (kiteLiveSessionManager != null) {
+            server.createContext("/api/auth/status", new AuthStatusHandler(kiteLiveSessionManager));
+            server.createContext("/api/auth/login", new AuthLoginHandler(kiteLiveSessionManager));
+        }
         server.createContext("/", new StaticUiHandler(uiRoot));
         server.setExecutor(Executors.newFixedThreadPool(6));
         server.start();
         System.out.printf("Scenario Research server listening on http://localhost:%d%n", port);
         System.out.printf("Serving UI from %s%n", uiRoot);
         System.out.printf("Using JDBC URL %s%n", jdbcUrl);
+        if (liveMarketService != null) {
+            System.out.println("Live Kite overlay endpoints enabled under /api/live/*");
+        }
+        if (kiteLiveSessionManager != null) {
+            System.out.println("Daily Kite login endpoints enabled under /api/auth/*");
+        }
+        return server;
     }
 
     private static final class WorkflowCollectionsHandler implements HttpHandler {
@@ -315,6 +352,210 @@ public final class ResearchConsoleServer {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             } catch (SQLException exception) {
                 sendJson(exchange, 500, "{\"error\":\"Unable to query diagnostics data\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class LiveStatusHandler implements HttpHandler {
+        private final LiveMarketService service;
+
+        private LiveStatusHandler(LiveMarketService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            sendJson(exchange, 200, toJson(service.loadStatus()));
+        }
+    }
+
+    private static final class AuthStatusHandler implements HttpHandler {
+        private final KiteLiveSessionManager sessionManager;
+
+        private AuthStatusHandler(KiteLiveSessionManager sessionManager) {
+            this.sessionManager = sessionManager;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            sendJson(exchange, 200, toJson(sessionManager.authStatus()));
+        }
+    }
+
+    private static final class AuthLoginHandler implements HttpHandler {
+        private final KiteLiveSessionManager sessionManager;
+
+        private AuthLoginHandler(KiteLiveSessionManager sessionManager) {
+            this.sessionManager = sessionManager;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> form = parseFormBody(exchange);
+                String requestToken = FairValueHandler.required(form, "requestToken");
+                sendJson(exchange, 200, toJson(sessionManager.login(requestToken)));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (IOException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to persist today's access token\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            } catch (RuntimeException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to start live session\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class LiveSpotHandler implements HttpHandler {
+        private final LiveMarketService service;
+
+        private LiveSpotHandler(LiveMarketService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            Map<String, String> query = parseQuery(exchange.getRequestURI());
+            String underlying = query.get("underlying");
+            if (underlying == null || underlying.isBlank()) {
+                sendJson(exchange, 200, toJson(service.loadSpots()));
+                return;
+            }
+            LiveMarketService.LiveSpotSnapshot snapshot = service.loadSpot(underlying);
+            if (snapshot == null) {
+                sendJson(exchange, 404, "{\"error\":\"Live spot unavailable\"}");
+                return;
+            }
+            sendJson(exchange, 200, toJson(snapshot));
+        }
+    }
+
+    private static final class LiveStructureHandler implements HttpHandler {
+        private final LiveMarketService service;
+
+        private LiveStructureHandler(LiveMarketService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = "POST".equalsIgnoreCase(exchange.getRequestMethod())
+                        ? parseFormBody(exchange)
+                        : parseQuery(exchange.getRequestURI());
+                StrategyStructureDefinition definition = parseStrategyDefinition(query);
+                sendJson(exchange, 200, toJson(service.loadStructure(definition)));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to compute live structure snapshot\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class LiveStructureTrendHandler implements HttpHandler {
+        private final LiveMarketService service;
+
+        private LiveStructureTrendHandler(LiveMarketService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = "POST".equalsIgnoreCase(exchange.getRequestMethod())
+                        ? parseFormBody(exchange)
+                        : parseQuery(exchange.getRequestURI());
+                StrategyStructureDefinition definition = parseStrategyDefinition(query);
+                sendJson(exchange, 200, toJson(service.loadStructureTrend(definition)));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to load live structure trend\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class LiveOverlayHandler implements HttpHandler {
+        private final LiveMarketService service;
+
+        private LiveOverlayHandler(LiveMarketService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = "POST".equalsIgnoreCase(exchange.getRequestMethod())
+                        ? parseFormBody(exchange)
+                        : parseQuery(exchange.getRequestURI());
+                StrategyStructureDefinition definition = parseStrategyDefinition(query);
+                LiveMarketService.LiveHistoricalOverlaySnapshot snapshot = service.loadOverlay(
+                        definition,
+                        query.getOrDefault("timeframe", "1Y"),
+                        parseLocalDate(query.get("customFrom")),
+                        parseLocalDate(query.get("customTo"))
+                );
+                sendJson(exchange, 200, toJson(snapshot));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to load live overlay\",\"details\":\""
                         + escapeJson(exception.getMessage()) + "\"}");
             }
         }
@@ -620,6 +861,192 @@ public final class ResearchConsoleServer {
                 snapshot.selectedWindow().uniqueContracts(),
                 snapshot.selectedWindow().percentile(),
                 snapshot.selectedWindow().differenceVsCurrent()
+        );
+    }
+
+    private static String toJson(KiteAuthStatus status) {
+        return """
+                {
+                  "authenticatedForToday":%s,
+                  "requiresLogin":%s,
+                  "userId":"%s",
+                  "tradingDate":"%s",
+                  "liveStatus":"%s",
+                  "message":"%s",
+                  "loginUrl":"%s",
+                  "tokenFile":"%s"
+                }
+                """.formatted(
+                status.authenticatedForToday(),
+                status.requiresLogin(),
+                escapeJson(status.userId()),
+                status.tradingDate(),
+                escapeJson(status.liveStatus()),
+                escapeJson(status.message()),
+                escapeJson(status.loginUrl() == null ? "" : status.loginUrl()),
+                escapeJson(String.valueOf(status.tokenFile()))
+        );
+    }
+
+    private static String toJson(LiveStatusReport snapshot) {
+        return """
+                {
+                  "status":"%s",
+                  "disconnectReason":"%s",
+                  "lastTickTs":%s,
+                  "secondsSinceLastTick":%d,
+                  "subscribedInstruments":%d,
+                  "ticksProcessed":%d
+                }
+                """.formatted(
+                escapeJson(snapshot.status()),
+                escapeJson(snapshot.disconnectReason()),
+                snapshot.lastTickTs() == null ? "null" : "\"" + snapshot.lastTickTs() + "\"",
+                snapshot.secondsSinceLastTick(),
+                snapshot.subscribedInstruments(),
+                snapshot.ticksProcessed()
+        );
+    }
+
+    private static String toJson(List<LiveMarketService.LiveSpotSnapshot> snapshots) {
+        String body = snapshots.stream()
+                .map(ResearchConsoleServer::toJson)
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        return "[" + body + "]";
+    }
+
+    private static String toJson(LiveMarketService.LiveSpotSnapshot snapshot) {
+        return """
+                {
+                  "underlying":"%s",
+                  "price":%.6f,
+                  "asOf":%s,
+                  "stale":%s
+                }
+                """.formatted(
+                escapeJson(snapshot.underlying()),
+                snapshot.price(),
+                snapshot.asOf() == null ? "null" : "\"" + snapshot.asOf() + "\"",
+                snapshot.stale()
+        );
+    }
+
+    private static String toJson(LiveMarketService.LiveStructureSnapshot snapshot) {
+        String legs = snapshot.legs().stream()
+                .map(leg -> """
+                        {
+                          "label":"%s",
+                          "instrumentId":"%s",
+                          "optionType":"%s",
+                          "side":"%s",
+                          "strike":%.6f,
+                          "lastPrice":%s,
+                          "bidPrice":%s,
+                          "askPrice":%s,
+                          "missing":%s
+                        }
+                        """.formatted(
+                        escapeJson(leg.label()),
+                        escapeJson(leg.instrumentId()),
+                        escapeJson(leg.optionType()),
+                        escapeJson(leg.side()),
+                        leg.strike(),
+                        leg.lastPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.lastPrice()),
+                        leg.bidPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.bidPrice()),
+                        leg.askPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.askPrice()),
+                        leg.missing()
+                ))
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        return """
+                {
+                  "structureKey":"%s",
+                  "mode":"%s",
+                  "orientation":"%s",
+                  "underlying":"%s",
+                  "expiryType":"%s",
+                  "liveSpot":%s,
+                  "liveSpotAsOf":%s,
+                  "economicNetPremiumPoints":%.6f,
+                  "premiumLabel":"%s",
+                  "partialData":%s,
+                  "asOf":%s,
+                  "legs":[%s]
+                }
+                """.formatted(
+                escapeJson(snapshot.structureKey()),
+                escapeJson(snapshot.mode()),
+                escapeJson(snapshot.orientation()),
+                escapeJson(snapshot.underlying()),
+                escapeJson(snapshot.expiryType()),
+                snapshot.liveSpot() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", snapshot.liveSpot()),
+                snapshot.liveSpotAsOf() == null ? "null" : "\"" + snapshot.liveSpotAsOf() + "\"",
+                snapshot.economicNetPremiumPoints(),
+                escapeJson(snapshot.premiumLabel()),
+                snapshot.partialData(),
+                snapshot.asOf() == null ? "null" : "\"" + snapshot.asOf() + "\"",
+                legs
+        );
+    }
+
+    private static String toJson(LiveMarketService.LiveStructureTrendSnapshot snapshot) {
+        String points = snapshot.points().stream()
+                .map(point -> """
+                        {
+                          "bucketTs":%s,
+                          "timeBucket15m":%d,
+                          "economicNetPremiumPoints":%.6f,
+                          "volumeSum":%d,
+                          "sampleCount":%d,
+                          "completeStructure":%s
+                        }
+                        """.formatted(
+                        point.bucketTs() == null ? "null" : "\"" + point.bucketTs() + "\"",
+                        point.timeBucket15m(),
+                        point.economicNetPremiumPoints(),
+                        point.volumeSum(),
+                        point.sampleCount(),
+                        point.completeStructure()
+                ))
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        return """
+                {
+                  "structureKey":"%s",
+                  "mode":"%s",
+                  "orientation":"%s",
+                  "underlying":"%s",
+                  "expiryType":"%s",
+                  "sessionDate":"%s",
+                  "points":[%s]
+                }
+                """.formatted(
+                escapeJson(snapshot.structureKey()),
+                escapeJson(snapshot.mode()),
+                escapeJson(snapshot.orientation()),
+                escapeJson(snapshot.underlying()),
+                escapeJson(snapshot.expiryType()),
+                snapshot.sessionDate(),
+                points
+        );
+    }
+
+    private static String toJson(LiveMarketService.LiveHistoricalOverlaySnapshot snapshot) {
+        return """
+                {
+                  "status":%s,
+                  "spot":%s,
+                  "structure":%s,
+                  "trend":%s,
+                  "historicalComparison":%s
+                }
+                """.formatted(
+                toJson(snapshot.status()),
+                snapshot.spot() == null ? "null" : toJson(snapshot.spot()),
+                snapshot.structure() == null ? "null" : toJson(snapshot.structure()),
+                snapshot.trend() == null ? "null" : toJson(snapshot.trend()),
+                snapshot.historicalComparison() == null ? "null" : toJson(snapshot.historicalComparison())
         );
     }
 

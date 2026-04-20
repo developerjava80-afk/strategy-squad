@@ -138,7 +138,17 @@ Current local APIs:
 - `GET /api/diagnostics`
 - workflow persistence endpoints under `/api/workflow/*`
 
+Live overlay APIs when booted through `KiteLiveConsoleMain`:
+
+- `GET /api/live/status`
+- `GET /api/live/spot`
+- `POST /api/live/structure`
+- `POST /api/live/structure-trend`
+- `POST /api/live/overlay`
+
 `POST /api/strategy-analysis` is now the main console endpoint. It accepts a form-encoded multi-leg structure and returns one compact `EconomicMetrics` payload for the UI.
+
+`POST /api/live/overlay` keeps the historical logic centralized: it resolves the current live structure, computes live net premium and current-session trend from isolated live tables/state, then reuses the canonical historical strategy-analysis service for the live-vs-history comparison.
 
 ## Recommendation layer
 
@@ -167,6 +177,19 @@ The main screen intentionally shows only:
 - realized expiry summary
 - recommendation summary
 - downloadable CSV report
+
+When live mode is enabled, the top bar also shows:
+
+- live feed connection/staleness state
+- latest live spot
+- current live structure premium
+- last tick age
+
+Live input hydration behavior:
+
+- when live structure quotes are available, the UI hydrates the selected underlying spot into the spot input
+- the UI also hydrates per-leg live option prices into the dynamic structure inputs
+- the historical comparison still remains canonical and DB-backed; the live values are only current-state overlays used as the current scenario input
 
 Deep diagnostics and matched-case exploration stay off the main screen.
 
@@ -222,6 +245,32 @@ mvn -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
 Then open:
 
 - `http://localhost:8080`
+
+### Live research server
+
+Apply `V004__live_session_tables.sql`, create `kite.properties`, then start the live console:
+
+```bash
+mvn -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
+  -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain \
+  -Dexec.args="kite.properties"
+```
+
+Live runtime notes:
+
+- create local ignored `kite.properties` from `kite.properties.example`
+- required keys for the daily login flow:
+  - `kite.api.key`
+  - `kite.api.secret`
+  - `kite.user.id`
+- `kite.access.token` is optional; the preferred path is to start the console, open `http://localhost:8080/login.html`, and exchange a fresh `request_token`
+- startup now auto-creates the live-session tables used by the overlay path if they are missing
+- the startup path refreshes today's NFO instrument universe into `instrument_master`
+- current live ATM baseline comes from fresh Kite spot quotes, not stale historical spot
+- current weekly/monthly live expiries are derived from the live NFO dump itself
+- live ticks persist only into `spot_live`, `options_live`, `options_live_enriched`, `options_live_15m`, and `live_structure_snapshot`
+- live overlay data never writes into historical research tables
+- the current implementation uses Kite `/quote` polling for transport, but preserves the same live/historical boundary required by the product design
 
 ## Validation status
 

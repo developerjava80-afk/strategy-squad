@@ -39,9 +39,9 @@ class OptionsLiveWriterTest {
                 2, Timestamp.from(tick.ingestTs()),
                 3, "NIFTY-20260430-22000-CE",
                 4, "NIFTY",
-                5, new BigDecimal("102.50"),
-                6, new BigDecimal("102.45"),
-                7, new BigDecimal("102.55"),
+                5, 102.50d,
+                6, 102.45d,
+                7, 102.55d,
                 8, 125L,
                 9, 900L
         )), statementRecorder.batchParameters());

@@ -26,6 +26,10 @@ replay_pid*
 # Maven
 target/
 
+# Kite credentials — never commit
+kite.properties
+kite.local.properties
+
 # IDE
 .idea/
 *.iml

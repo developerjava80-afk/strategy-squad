@@ -13,9 +13,29 @@
             <p class="eyebrow">Strategy Squad / Algo Structure Testing</p>
             <h1>Fast structure-testing console for historical option setups.</h1>
         </div>
-        <p class="topbar-note">
-            Build the structure, run one historical query, and read only the compact strategy outputs that matter.
-        </p>
+        <div class="topbar-side">
+            <p class="topbar-note">
+                Build the structure, run one historical query, and read only the compact strategy outputs that matter.
+            </p>
+            <div class="live-strip">
+                <div class="live-chip">
+                    <span class="chip-label">Live feed</span>
+                    <strong id="live-status-chip">Disabled</strong>
+                </div>
+                <div class="live-chip">
+                    <span class="chip-label">Live spot</span>
+                    <strong id="live-spot-chip">-</strong>
+                </div>
+                <div class="live-chip">
+                    <span class="chip-label">Live structure</span>
+                    <strong id="live-premium-chip">-</strong>
+                </div>
+                <div class="live-chip">
+                    <span class="chip-label">Last tick</span>
+                    <strong id="live-last-tick-chip">-</strong>
+                </div>
+            </div>
+        </div>
     </header>
 
     <main class="console">

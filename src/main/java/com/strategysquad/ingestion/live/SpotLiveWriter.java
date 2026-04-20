@@ -38,7 +38,7 @@ public class SpotLiveWriter {
                 statement.setTimestamp(1, Timestamp.from(tick.exchangeTs()));
                 statement.setTimestamp(2, Timestamp.from(tick.ingestTs()));
                 statement.setString(3, tick.underlying());
-                statement.setBigDecimal(4, tick.lastPrice());
+                statement.setDouble(4, tick.lastPrice().doubleValue());
                 statement.addBatch();
             }
             return successfulBatchCount(statement.executeBatch());

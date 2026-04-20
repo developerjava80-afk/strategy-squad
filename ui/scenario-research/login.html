@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Zerodha Login</title>
+    <link rel="stylesheet" href="./login.css">
+</head>
+<body>
+<main class="login-shell">
+    <section class="login-card">
+        <p class="eyebrow">Strategy Squad / Live Console Login</p>
+        <h1>Complete today&apos;s Zerodha login.</h1>
+        <p class="login-note">
+            Open Kite Connect login, complete the Zerodha auth flow, then paste today&apos;s `request_token`. The backend will exchange it into the daily `access_token` and reuse that token for the rest of the trading day.
+        </p>
+
+        <form id="login-form" class="login-form">
+            <a id="kite-login-link" class="kite-link" href="#" target="_blank" rel="noreferrer">Open Zerodha Kite Login</a>
+            <label class="field">
+                <span>Request token</span>
+                <input id="request-token" name="requestToken" type="text" autocomplete="off" required>
+            </label>
+            <button id="login-button" class="login-button" type="submit">Exchange Token And Start Live Console</button>
+        </form>
+
+        <div class="status-box">
+            <div class="status-row">
+                <span class="label">User</span>
+                <strong id="user-id">-</strong>
+            </div>
+            <div class="status-row">
+                <span class="label">Trading date</span>
+                <strong id="trading-date">-</strong>
+            </div>
+            <div class="status-row">
+                <span class="label">Live status</span>
+                <strong id="live-status">-</strong>
+            </div>
+        </div>
+
+        <p id="status-line" class="status-line">Checking daily login state...</p>
+    </section>
+</main>
+
+<script src="./login.js"></script>
+</body>
+</html>

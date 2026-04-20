@@ -26,7 +26,7 @@ final class JdbcRecordingSupport {
 
         PreparedStatement proxy() {
             InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
-                case "setTimestamp", "setString", "setBigDecimal", "setLong" -> {
+                case "setTimestamp", "setString", "setBigDecimal", "setLong", "setDouble" -> {
                     currentParameters.put((Integer) args[0], args[1]);
                     yield null;
                 }
@@ -124,6 +124,9 @@ final class JdbcRecordingSupport {
     }
 
     private static Object defaultValue(Class<?> returnType) {
+        if (returnType == void.class) {
+            return null;
+        }
         if (!returnType.isPrimitive()) {
             return null;
         }

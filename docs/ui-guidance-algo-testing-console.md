@@ -91,6 +91,7 @@ Published as:
 Functional meaning:
 
 - used with each strike to derive moneyness
+- when live overlay is active and quotes are available, this field is hydrated from the latest live underlying spot for the selected underlying
 
 ### Timeframe
 
@@ -135,6 +136,7 @@ Functional meaning:
 - each leg is independently normalized into canonical historical context
 - all legs together define the tested structure
 - entry prices sum into the current total premium
+- when live overlay is active and live quotes exist for the resolved structure, leg entry prices are hydrated from live option last prices
 
 ## Header chips
 
@@ -167,6 +169,41 @@ Functional meaning:
 
 - sum of posted leg entry prices
 - reference used in structure percentile and premium-richness comparisons
+
+## Live overlay strip
+
+This strip appears only when the console is running with the live Kite overlay enabled.
+
+### Live feed
+
+Functional meaning:
+
+- current live session transport state
+- values such as `CONNECTED`, `STALE`, `TOKEN_EXPIRED`, or `DISABLED` describe data-feed health, not market conviction
+
+### Live spot
+
+Functional meaning:
+
+- latest live `NIFTY` or `BANKNIFTY` spot for the selected underlying
+- current-state context only
+- does not replace canonical historical pricing truth
+
+### Live structure
+
+Functional meaning:
+
+- current live net debit / credit for the full posted structure
+- seller structures display credit as positive
+- buyer structures display debit as positive
+- this live structure read is also used to hydrate the current scenario before historical comparison when all required live legs are available
+
+### Last tick
+
+Functional meaning:
+
+- age of the latest live tick in seconds
+- supports staleness awareness so the user can judge whether the live overlay is fresh enough to trust
 
 ## Snapshot block
 

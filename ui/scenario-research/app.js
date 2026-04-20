@@ -16,6 +16,10 @@ const els = {
     runAnalysisButton: document.getElementById("run-analysis-button"),
     downloadReportButton: document.getElementById("download-report-button"),
     statusLine: document.getElementById("status-line"),
+    liveStatusChip: document.getElementById("live-status-chip"),
+    liveSpotChip: document.getElementById("live-spot-chip"),
+    livePremiumChip: document.getElementById("live-premium-chip"),
+    liveLastTickChip: document.getElementById("live-last-tick-chip"),
     strategyChip: document.getElementById("strategy-chip"),
     orientationChip: document.getElementById("orientation-chip"),
     timeframeChip: document.getElementById("timeframe-chip"),
@@ -175,10 +179,12 @@ const pointBucketSize = {
 
 let legsState = [];
 let strategyAbortController = null;
+let liveAbortController = null;
 let latestReportPayload = null;
+let liveSyncTimer = null;
+let liveHydrationMuted = false;
 
-populateStrategyOptions();
-initializeStrategy();
+boot();
 
 form.addEventListener("input", handleFormInput);
 form.addEventListener("change", handleFormChange);
@@ -188,6 +194,30 @@ els.downloadReportButton.addEventListener("click", downloadReport);
 
 function apiBase() {
     return window.location.protocol === "file:" ? "http://localhost:8080" : "";
+}
+
+async function boot() {
+    const authenticated = await ensureAuthenticated();
+    if (!authenticated) {
+        return;
+    }
+    populateStrategyOptions();
+    initializeStrategy();
+    startLiveSync();
+}
+
+async function ensureAuthenticated() {
+    try {
+        const status = await fetchJson(`${apiBase()}/api/auth/status`);
+        if (status.requiresLogin) {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.replace(`/login.html?next=${next}`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        return true;
+    }
 }
 
 function populateStrategyOptions() {
@@ -202,9 +232,13 @@ function initializeStrategy() {
     renderLegs();
     renderHeader();
     setPlaceholderResults();
+    resetLiveStrip();
 }
 
 function handleFormInput(event) {
+    if (liveHydrationMuted) {
+        return;
+    }
     if (event.target.matches("[data-leg-index][data-field='strike']")) {
         syncDistanceFromStrike(Number(event.target.dataset.legIndex));
     }
@@ -215,9 +249,13 @@ function handleFormInput(event) {
         syncLegStateFromDom(Number(event.target.dataset.legIndex));
     }
     renderHeader();
+    refreshLiveOverlay();
 }
 
 function handleFormChange(event) {
+    if (liveHydrationMuted) {
+        return;
+    }
     if (event.target === els.strategyMode) {
         resetLegsForStrategy();
         renderLegs();
@@ -228,6 +266,7 @@ function handleFormChange(event) {
     }
     syncTimeframeFields();
     renderHeader();
+    refreshLiveOverlay();
 }
 
 function createLegState({
@@ -474,6 +513,13 @@ function setStatus(message) {
     els.statusLine.textContent = message;
 }
 
+function resetLiveStrip() {
+    els.liveStatusChip.textContent = "Disabled";
+    els.liveSpotChip.textContent = "-";
+    els.livePremiumChip.textContent = "-";
+    els.liveLastTickChip.textContent = "-";
+}
+
 function setText(target, value) {
     target.textContent = value;
 }
@@ -603,6 +649,7 @@ async function runAnalysis() {
         latestReportPayload = { inputs, payload };
         const warning = payload.observation?.lowSampleWarning ? ` ${payload.observation.lowSampleWarning}` : "";
         setStatus(`EconomicMetrics loaded from canonical history: ${payload.observation?.observationCount || 0} matched structures.${warning}`);
+        await refreshLiveOverlay();
     } catch (error) {
         if (error.name === "AbortError") {
             return;
@@ -610,6 +657,153 @@ async function runAnalysis() {
         setPlaceholderResults();
         setStatus(`Historical structure query unavailable: ${error.message}`);
     }
+}
+
+function startLiveSync() {
+    refreshLiveStatus();
+    refreshLiveOverlay();
+    if (liveSyncTimer) {
+        window.clearInterval(liveSyncTimer);
+    }
+    liveSyncTimer = window.setInterval(() => {
+        refreshLiveStatus();
+        refreshLiveOverlay();
+    }, 15000);
+}
+
+async function refreshLiveStatus() {
+    try {
+        const status = await fetchJson(`${apiBase()}/api/live/status`);
+        els.liveStatusChip.textContent = status.status || "Disabled";
+        els.liveLastTickChip.textContent = formatLiveTime(status.lastTickTs, status.secondsSinceLastTick);
+    } catch (error) {
+        resetLiveStrip();
+    }
+}
+
+async function refreshLiveOverlay() {
+    const inputs = currentInputs();
+    if (liveAbortController) {
+        liveAbortController.abort();
+    }
+    liveAbortController = new AbortController();
+    try {
+        const body = new URLSearchParams({
+            mode: inputs.strategyMode,
+            orientation: inputs.orientation,
+            underlying: inputs.underlying,
+            expiryType: inputs.expiryType,
+            dte: String(inputs.dte),
+            spot: String(inputs.spot),
+            timeframe: inputs.timeframe,
+            legCount: String(inputs.legs.length)
+        });
+        if (inputs.customFrom) {
+            body.set("customFrom", inputs.customFrom);
+        }
+        if (inputs.customTo) {
+            body.set("customTo", inputs.customTo);
+        }
+        inputs.legs.forEach((leg, index) => {
+            body.set(`leg${index}Label`, leg.label);
+            body.set(`leg${index}OptionType`, leg.optionType);
+            body.set(`leg${index}Side`, leg.side);
+            body.set(`leg${index}Strike`, String(leg.strike));
+            body.set(`leg${index}EntryPrice`, String(leg.entryPrice));
+        });
+
+        const overlay = await fetchJson(`${apiBase()}/api/live/overlay`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            body: body.toString(),
+            signal: liveAbortController.signal
+        });
+
+        applyLiveOverlay(overlay, inputs);
+    } catch (error) {
+        if (error.name === "AbortError") {
+            return;
+        }
+        if (!String(error.message || "").includes("404")) {
+            els.liveStatusChip.textContent = "Unavailable";
+        }
+    }
+}
+
+function applyLiveOverlay(overlay, inputs) {
+    const status = overlay.status || {};
+    const spot = overlay.spot || {};
+    const structure = overlay.structure || {};
+
+    els.liveStatusChip.textContent = status.status || "Disabled";
+    els.liveSpotChip.textContent = Number.isFinite(Number(spot.price)) ? `${formatNumber(spot.price, 2)} pts` : "-";
+    els.livePremiumChip.textContent = Number.isFinite(Number(structure.economicNetPremiumPoints))
+        ? `${formatNumber(structure.economicNetPremiumPoints, 2)} pts`
+        : "-";
+    els.liveLastTickChip.textContent = formatLiveTime(status.lastTickTs, status.secondsSinceLastTick);
+    hydrateInputsFromLiveOverlay(spot, structure);
+
+    if (overlay.historicalComparison) {
+        const liveInputs = {
+            ...inputs,
+            spot: Number.isFinite(Number(spot.price)) ? Number(spot.price) : inputs.spot,
+            legs: legsState.map((leg) => ({ ...leg })),
+            currentEconomicPremium: Number(structure.economicNetPremiumPoints || currentEconomicPremiumFromInputs())
+        };
+        applyStrategyAnalysis(overlay.historicalComparison, liveInputs);
+        latestReportPayload = { inputs: liveInputs, payload: overlay.historicalComparison };
+        const liveNote = structure.partialData
+            ? " Live feed partial; comparison held to available legs only."
+            : " Live structure compared against canonical history.";
+        setStatus(`${status.status || "LIVE"} overlay active.${liveNote}`);
+    }
+}
+
+function hydrateInputsFromLiveOverlay(spot, structure) {
+    const liveSpot = Number(spot?.price);
+    const liveLegs = Array.isArray(structure?.legs) ? structure.legs : [];
+    const canHydrateSpot = Number.isFinite(liveSpot);
+    const canHydrateLegs = liveLegs.length > 0 && liveLegs.some((leg) => Number.isFinite(Number(leg.lastPrice)));
+    if (!canHydrateSpot && !canHydrateLegs) {
+        return;
+    }
+
+    liveHydrationMuted = true;
+    try {
+        if (canHydrateSpot) {
+            const roundedSpot = Number(liveSpot.toFixed(2));
+            els.spot.value = stripTrailingZeros(roundedSpot);
+        }
+        liveLegs.forEach((liveLeg, index) => {
+            if (!legsState[index]) {
+                return;
+            }
+            const lastPrice = Number(liveLeg.lastPrice);
+            if (Number.isFinite(lastPrice)) {
+                legsState[index].entryPrice = Number(lastPrice.toFixed(2));
+            }
+            if (Number.isFinite(Number(liveLeg.strike))) {
+                legsState[index].strike = Number(liveLeg.strike);
+                legsState[index].distance = Number(liveLeg.strike) - numberValue(els.spot);
+            }
+        });
+        renderLegs();
+        renderHeader();
+    } finally {
+        liveHydrationMuted = false;
+    }
+}
+
+function formatLiveTime(timestamp, secondsSinceLastTick) {
+    if (!timestamp) {
+        return "-";
+    }
+    if (Number.isFinite(Number(secondsSinceLastTick)) && Number(secondsSinceLastTick) >= 0) {
+        return `${secondsSinceLastTick}s ago`;
+    }
+    return new Date(timestamp).toLocaleTimeString("en-IN");
 }
 
 function applyStrategyAnalysis(payload, inputs) {

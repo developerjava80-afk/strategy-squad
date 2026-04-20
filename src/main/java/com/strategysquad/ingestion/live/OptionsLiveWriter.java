@@ -40,9 +40,9 @@ public class OptionsLiveWriter {
                 statement.setTimestamp(2, Timestamp.from(tick.ingestTs()));
                 statement.setString(3, tick.instrumentId());
                 statement.setString(4, tick.underlying());
-                statement.setBigDecimal(5, tick.lastPrice());
-                statement.setBigDecimal(6, tick.bidPrice());
-                statement.setBigDecimal(7, tick.askPrice());
+                statement.setDouble(5, tick.lastPrice().doubleValue());
+                statement.setDouble(6, tick.bidPrice().doubleValue());
+                statement.setDouble(7, tick.askPrice().doubleValue());
                 statement.setLong(8, tick.volume());
                 statement.setLong(9, tick.openInterest());
                 statement.addBatch();

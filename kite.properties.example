@@ -1,0 +1,31 @@
+# Zerodha Kite Connect app credentials
+# Create a local `kite.properties` next to this file and fill the values from:
+# https://kite.trade/dashboard
+#
+# The daily login screen uses `kite.api.key` + `kite.api.secret` to exchange a
+# fresh `request_token` into the session `access_token`.
+
+kite.api.key=egmcnayk2z9xsf2u
+kite.api.secret=p771ous3zyhwn4lrpkbzm8uipcax2lnu
+kite.user.id=PS6228
+
+# Optional bootstrap token. Usually leave blank and use the login screen.
+# kite.access.token=
+
+# Strike range around ATM to subscribe to (in points)
+kite.nifty.strike.window.points=2000
+kite.banknifty.strike.window.points=4000
+
+# Include next expiry beyond current weekly/monthly (true = subscribe 2 expiry dates per cycle)
+kite.subscribe.next.weekly=false
+kite.subscribe.next.monthly=false
+
+# Tick buffer: flush to DB after this many milliseconds OR max ticks (whichever comes first)
+kite.tick.buffer.ms=200
+kite.tick.buffer.max.size=50
+
+# Database
+kite.jdbc.url=jdbc:postgresql://localhost:8812/qdb
+
+# Research console port (live mode)
+kite.console.port=8080
