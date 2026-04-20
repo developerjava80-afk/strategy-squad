@@ -496,6 +496,13 @@ Current implementation note:
 - the console is now centered on full strategy structure testing rather than a small strategy toggle
 - the UI posts a full multi-leg structure to the backend and receives one compact structure snapshot
 - recommendation ranking is deterministic and transparent; it compares a small candidate set around the same market context rather than acting like a black-box optimizer
+- the default historical matching path is contextual, not exact strike-pair matching
+- contextual historical analogs are resolved by `underlying`, `expiry_type`, `option_type`, `time_bucket_15m`, `moneyness_bucket`, and structure type
+- exact strike-pair / exact structure matching is reserved for drill-down behavior, not the primary screen
+- raw signed strategy-analysis values are internal only
+- all UI, recommendation, and CSV/report output now consume canonical `EconomicMetrics`
+- descriptive price percentile and side-aware economic percentile are both published
+- low sample can downgrade confidence, but it must not invert economic meaning
 - the domain contract governs payoff safety, unit clarity, current-trade comparability, and recommendation honesty
 
 Canonical server-backed components:
@@ -503,8 +510,11 @@ Canonical server-backed components:
 - `TimeframeAnalysisService` remains available for regime comparison utilities
 - `ForwardOutcomeCohortService` remains available for direct cohort outcome work
 - `StrategyStructureDefinition` models posted multi-leg strategy structures
-- `StrategyAnalysisService` backs structure-level historical testing
-- `StrategyAnalysisCalculator` computes compact structure-level outputs
+- `RawStrategyMetrics` is the internal signed analysis contract
+- `EconomicMetrics` is the canonical trader-readable output contract
+- `EconomicMetricsTransformer` is the single raw-to-economic transformation layer
+- `StrategyAnalysisService` backs structure-level historical testing and contextual recommendation ranking
+- `StrategyAnalysisCalculator` computes compact raw structure-level outputs
 - `ResearchConsoleServer` serves the UI and exposes the local research APIs
 
 Current research APIs:

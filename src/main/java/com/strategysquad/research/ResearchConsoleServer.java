@@ -269,7 +269,7 @@ public final class ResearchConsoleServer {
                         ? parseFormBody(exchange)
                         : parseQuery(exchange.getRequestURI());
                 StrategyStructureDefinition definition = parseStrategyDefinition(query);
-                StrategyAnalysisSnapshot snapshot = service.loadSnapshot(
+                EconomicMetrics snapshot = service.loadSnapshot(
                         definition,
                         query.getOrDefault("timeframe", "1Y"),
                         parseLocalDate(query.get("customFrom")),
@@ -623,44 +623,52 @@ public final class ResearchConsoleServer {
         );
     }
 
-    private static String toJson(StrategyAnalysisSnapshot snapshot) {
-        String windowsJson = snapshot.premiumWindows().stream()
+    private static String toJson(EconomicMetrics snapshot) {
+        String windowsJson = snapshot.timeframeTrend().windows().stream()
                 .map(item -> """
                         {
                           "label":"%s",
-                          "averageTotalPremium":%.6f,
-                          "medianPremium":%.6f,
-                          "currentVsHistoricalAverage":%.6f,
+                          "averagePremiumPoints":%.6f,
+                          "medianPremiumPoints":%.6f,
+                          "rawPricePercentile":%d,
+                          "economicPercentile":%d,
+                          "percentileReliable":%s,
+                          "currentVsAveragePoints":%.6f,
                           "observationCount":%d
                         }
                         """.formatted(
                         escapeJson(item.label()),
-                        item.averageTotalPremium(),
-                        item.medianPremium(),
-                        item.currentVsHistoricalAverage(),
+                        item.averagePremiumPoints(),
+                        item.medianPremiumPoints(),
+                        item.rawPricePercentile(),
+                        item.economicPercentile(),
+                        item.percentileReliable(),
+                        item.currentVsAveragePoints(),
                         item.observationCount()
                 ))
                 .reduce((left, right) -> left + "," + right)
                 .orElse("");
-        String casesJson = snapshot.matchedCases().stream()
+        String casesJson = snapshot.historicalCases().stream()
                 .map(item -> """
                         {
                           "tradeDate":"%s",
                           "expiryDate":"%s",
-                          "totalEntryPremium":%.6f,
-                          "expiryValue":%.6f,
-                          "selectedPnl":%.6f,
-                          "buyerPnl":%.6f,
-                          "sellerPnl":%.6f
+                          "entryPremiumPoints":%.6f,
+                          "expiryValuePoints":%.6f,
+                          "selectedSidePnlPoints":%.6f,
+                          "buyerPnlPoints":%.6f,
+                          "sellerPnlPoints":%.6f,
+                          "historicalExtremesLabel":"%s"
                         }
                         """.formatted(
                         escapeJson(item.tradeDate()),
                         escapeJson(item.expiryDate()),
-                        item.totalEntryPremium(),
-                        item.expiryValue(),
-                        item.selectedPnl(),
-                        item.buyerPnl(),
-                        item.sellerPnl()
+                        item.entryPremiumPoints(),
+                        item.expiryValuePoints(),
+                        item.selectedSidePnlPoints(),
+                        item.buyerPnlPoints(),
+                        item.sellerPnlPoints(),
+                        escapeJson(item.historicalExtremesLabel())
                 ))
                 .reduce((left, right) -> left + "," + right)
                 .orElse("");
@@ -669,88 +677,178 @@ public final class ResearchConsoleServer {
                   "mode":"%s",
                   "orientation":"%s",
                   "timeframe":"%s",
-                  "observationCount":%d,
-                  "currentTotalPremium":%.6f,
-                  "snapshot":{
-                    "averageEntryPremium":%.6f,
-                    "medianEntryPremium":%.6f,
-                    "currentPremiumPercentile":%d,
-                    "currentVsHistoricalAverage":%.6f,
-                    "averageExpiryValue":%.6f,
-                    "averagePnl":%.6f,
-                    "medianPnl":%.6f,
-                    "winRatePct":%.6f,
-                    "bestCase":%.6f,
-                    "worstCase":%.6f
+                  "observation":{
+                    "anchorDate":"%s",
+                    "observationCount":%d,
+                    "evidenceStrength":"%s",
+                    "lowSampleWarning":"%s",
+                    "lowSampleDowngrade":%s
                   },
-                  "premiumWindows":[%s],
-                  "expiryOutcome":{
-                    "averageExpiryPayout":%.6f,
-                    "averageSellerPnl":%.6f,
-                    "averageBuyerPnl":%.6f,
-                    "winRatePct":%.6f,
-                    "tailLossP10":%.6f,
-                    "downsideProfile":"%s"
+                  "premium":{
+                    "currentPremiumLabel":"%s",
+                    "averageEntryLabel":"%s",
+                    "medianEntryLabel":"%s",
+                    "currentPremiumPoints":%.6f,
+                    "averageEntryPoints":%.6f,
+                    "medianEntryPoints":%.6f,
+                    "rawPricePercentile":%d,
+                    "economicPercentile":%d,
+                    "percentileReliable":%s,
+                    "currentVsAveragePoints":%.6f,
+                    "currentVsAveragePct":%.6f,
+                    "priceConditionLabel":"%s",
+                    "attractivenessLabel":"%s"
+                  },
+                  "expiry":{
+                    "averageExpiryValueLabel":"%s",
+                    "averageExpiryValuePoints":%.6f,
+                    "averageExpiryPayoutPoints":%.6f,
+                    "selectedSideAveragePnlPoints":%.6f,
+                    "oppositeSideAveragePnlPoints":%.6f,
+                    "selectedSideWinRatePct":%.6f,
+                    "oppositeSideWinRatePct":%.6f,
+                    "selectedSideLabel":"%s"
+                  },
+                  "pnl":{
+                    "averagePnlPoints":%.6f,
+                    "medianPnlPoints":%.6f,
+                    "avgWinPnlPoints":%.6f,
+                    "avgLossPnlPoints":%.6f,
+                    "payoffRatio":%.6f,
+                    "expectancyPoints":%.6f,
+                    "expectancyLabel":"%s",
+                    "selectedSideLabel":"%s"
+                  },
+                  "risk":{
+                    "currentTheoreticalMaxProfitPoints":%s,
+                    "currentTheoreticalMaxLossPoints":%s,
+                    "boundsLabel":"%s",
+                    "tailLossP10Points":%.6f,
+                    "downsideProfile":"%s",
+                    "lowSampleWarning":"%s",
+                    "historicalBestPnlPoints":%.6f,
+                    "historicalWorstPnlPoints":%.6f,
+                    "historicalExtremesLabel":"%s"
+                  },
+                  "insight":{
+                    "premiumVerdict":"%s",
+                    "premiumDetail":"%s",
+                    "edgeVerdict":"%s",
+                    "edgeDetail":"%s",
+                    "riskVerdict":"%s",
+                    "riskDetail":"%s",
+                    "overallVerdict":"%s",
+                    "overallDetail":"%s"
+                  },
+                  "timeframeTrend":{
+                    "currentPremiumPoints":%.6f,
+                    "windows":[%s]
                   },
                   "recommendation":{
                     "preferred":%s,
                     "alternative":%s,
-                    "avoid":%s
+                    "avoid":%s,
+                    "contextNote":"%s"
                   },
-                  "matchedCases":[%s]
+                  "historicalCases":[%s]
                 }
                 """.formatted(
                 escapeJson(snapshot.mode()),
                 escapeJson(snapshot.orientation()),
                 escapeJson(snapshot.timeframe()),
-                snapshot.observationCount(),
-                snapshot.currentTotalPremium(),
-                snapshot.snapshot().averageEntryPremium(),
-                snapshot.snapshot().medianEntryPremium(),
-                snapshot.snapshot().currentPremiumPercentile(),
-                snapshot.snapshot().currentVsHistoricalAverage(),
-                snapshot.snapshot().averageExpiryValue(),
-                snapshot.snapshot().averagePnl(),
-                snapshot.snapshot().medianPnl(),
-                snapshot.snapshot().winRatePct(),
-                snapshot.snapshot().bestCase(),
-                snapshot.snapshot().worstCase(),
+                escapeJson(snapshot.observation().anchorDate()),
+                snapshot.observation().observationCount(),
+                escapeJson(snapshot.observation().evidenceStrength()),
+                escapeJson(snapshot.observation().lowSampleWarning()),
+                snapshot.observation().lowSampleDowngrade(),
+                escapeJson(snapshot.premium().currentPremiumLabel()),
+                escapeJson(snapshot.premium().averageEntryLabel()),
+                escapeJson(snapshot.premium().medianEntryLabel()),
+                snapshot.premium().currentPremiumPoints(),
+                snapshot.premium().averageEntryPoints(),
+                snapshot.premium().medianEntryPoints(),
+                snapshot.premium().rawPricePercentile(),
+                snapshot.premium().economicPercentile(),
+                snapshot.premium().percentileReliable(),
+                snapshot.premium().currentVsAveragePoints(),
+                snapshot.premium().currentVsAveragePct(),
+                escapeJson(snapshot.premium().priceConditionLabel()),
+                escapeJson(snapshot.premium().attractivenessLabel()),
+                escapeJson(snapshot.expiry().averageExpiryValueLabel()),
+                snapshot.expiry().averageExpiryValuePoints(),
+                snapshot.expiry().averageExpiryPayoutPoints(),
+                snapshot.expiry().selectedSideAveragePnlPoints(),
+                snapshot.expiry().oppositeSideAveragePnlPoints(),
+                snapshot.expiry().selectedSideWinRatePct(),
+                snapshot.expiry().oppositeSideWinRatePct(),
+                escapeJson(snapshot.expiry().selectedSideLabel()),
+                snapshot.pnl().averagePnlPoints(),
+                snapshot.pnl().medianPnlPoints(),
+                snapshot.pnl().avgWinPnlPoints(),
+                snapshot.pnl().avgLossPnlPoints(),
+                snapshot.pnl().payoffRatio(),
+                snapshot.pnl().expectancyPoints(),
+                escapeJson(snapshot.pnl().expectancyLabel()),
+                escapeJson(snapshot.pnl().selectedSideLabel()),
+                snapshot.risk().currentTheoreticalMaxProfitPoints() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", snapshot.risk().currentTheoreticalMaxProfitPoints()),
+                snapshot.risk().currentTheoreticalMaxLossPoints() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", snapshot.risk().currentTheoreticalMaxLossPoints()),
+                escapeJson(snapshot.risk().boundsLabel()),
+                snapshot.risk().tailLossP10Points(),
+                escapeJson(snapshot.risk().downsideProfile()),
+                escapeJson(snapshot.risk().lowSampleWarning()),
+                snapshot.risk().historicalBestPnlPoints(),
+                snapshot.risk().historicalWorstPnlPoints(),
+                escapeJson(snapshot.risk().historicalExtremesLabel()),
+                escapeJson(snapshot.insight().premiumVerdict()),
+                escapeJson(snapshot.insight().premiumDetail()),
+                escapeJson(snapshot.insight().edgeVerdict()),
+                escapeJson(snapshot.insight().edgeDetail()),
+                escapeJson(snapshot.insight().riskVerdict()),
+                escapeJson(snapshot.insight().riskDetail()),
+                escapeJson(snapshot.insight().overallVerdict()),
+                escapeJson(snapshot.insight().overallDetail()),
+                snapshot.timeframeTrend().currentPremiumPoints(),
                 windowsJson,
-                snapshot.expiryOutcome().averageExpiryPayout(),
-                snapshot.expiryOutcome().averageSellerPnl(),
-                snapshot.expiryOutcome().averageBuyerPnl(),
-                snapshot.expiryOutcome().winRatePct(),
-                snapshot.expiryOutcome().tailLossP10(),
-                escapeJson(snapshot.expiryOutcome().downsideProfile()),
                 toJson(snapshot.recommendation().preferred()),
                 toJson(snapshot.recommendation().alternative()),
                 toJson(snapshot.recommendation().avoid()),
+                escapeJson(snapshot.recommendation().contextNote()),
                 casesJson
         );
     }
 
-    private static String toJson(StrategyAnalysisSnapshot.StrategyRecommendation recommendation) {
+    private static String toJson(EconomicMetrics.RecommendationCandidate recommendation) {
         return """
                 {
                   "mode":"%s",
                   "orientation":"%s",
+                  "title":"%s",
                   "score":%.6f,
                   "observationCount":%d,
-                  "premiumVsHistory":%.6f,
-                  "averagePnl":%.6f,
+                  "lowSampleWarning":"%s",
+                  "rawPricePercentile":%d,
+                  "economicPercentile":%d,
+                  "premiumVsAveragePoints":%.6f,
+                  "averagePnlPoints":%.6f,
                   "winRatePct":%.6f,
-                  "downsideSeverity":%.6f,
+                  "downsideSeverityPoints":%.6f,
+                  "verdict":"%s",
                   "reason":"%s"
                 }
                 """.formatted(
                 escapeJson(recommendation.mode()),
                 escapeJson(recommendation.orientation()),
+                escapeJson(recommendation.title()),
                 recommendation.score(),
                 recommendation.observationCount(),
-                recommendation.premiumVsHistory(),
-                recommendation.averagePnl(),
+                escapeJson(recommendation.lowSampleWarning()),
+                recommendation.rawPricePercentile(),
+                recommendation.economicPercentile(),
+                recommendation.premiumVsAveragePoints(),
+                recommendation.averagePnlPoints(),
                 recommendation.winRatePct(),
-                recommendation.downsideSeverity(),
+                recommendation.downsideSeverityPoints(),
+                escapeJson(recommendation.verdict()),
                 escapeJson(recommendation.reason())
         );
     }
@@ -992,7 +1090,26 @@ public final class ResearchConsoleServer {
     }
 
     private static String escapeJson(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+        if (value == null) return "";
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (ch < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        sb.append(ch);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     private static void withCors(Headers headers) {

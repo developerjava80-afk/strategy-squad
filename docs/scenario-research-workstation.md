@@ -61,14 +61,35 @@ Canonical and historical foundations:
 Structure-testing components:
 
 - `src/main/java/com/strategysquad/research/StrategyStructureDefinition.java`
+- `src/main/java/com/strategysquad/research/RawStrategyMetrics.java`
+- `src/main/java/com/strategysquad/research/EconomicMetrics.java`
+- `src/main/java/com/strategysquad/research/EconomicMetricsTransformer.java`
 - `src/main/java/com/strategysquad/research/StrategyAnalysisService.java`
-- `src/main/java/com/strategysquad/research/StrategyAnalysisSnapshot.java`
 - `src/main/java/com/strategysquad/research/StrategyAnalysisCalculator.java`
 - `src/main/java/com/strategysquad/research/ResearchConsoleServer.java`
 
 ## Strategy analysis contract
 
 The strategy layer now analyzes the full historical structure, not just individual legs.
+
+Default cohort semantics:
+
+- the primary strategy-analysis path uses contextual historical analogs, not exact strike-pair matching
+- the contextual match is built from:
+  - `underlying`
+  - `expiry_type`
+  - `option_type`
+  - DTE / `time_bucket_15m`
+  - `moneyness_bucket`
+  - structure type
+- exact strike-pair / exact structure matching is treated as a separate drill-down mode, not the default screen behavior
+
+Transformation boundary:
+
+- `RawStrategyMetrics` is the internal signed model used for historical structure assembly
+- `EconomicMetrics` is the canonical output contract for UI, recommendation, CSV, and report consumers
+- `EconomicMetricsTransformer` is the only supported place to convert signed internals into trader-readable buyer/seller semantics
+- low-sample warnings can downgrade confidence, but they must not flip rich into cheap or invert economic meaning
 
 Domain guardrails from the contract apply here directly:
 
@@ -79,11 +100,12 @@ Domain guardrails from the contract apply here directly:
 
 Published compact outputs:
 
-- current total premium
+- current premium
 - matched structure observations
 - average entry premium
 - median entry premium
-- current premium percentile
+- raw price percentile
+- economic percentile
 - current structure vs historical average
 - average expiry value
 - average P&L
@@ -116,7 +138,7 @@ Current local APIs:
 - `GET /api/diagnostics`
 - workflow persistence endpoints under `/api/workflow/*`
 
-`POST /api/strategy-analysis` is now the main console endpoint. It accepts a form-encoded multi-leg structure and returns one compact structure snapshot for the UI.
+`POST /api/strategy-analysis` is now the main console endpoint. It accepts a form-encoded multi-leg structure and returns one compact `EconomicMetrics` payload for the UI.
 
 ## Recommendation layer
 

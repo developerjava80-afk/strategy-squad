@@ -394,9 +394,136 @@ select:focus {
     .query-chip-row,
     .snapshot-grid,
     .expiry-grid,
-    .leg-grid {
+    .leg-grid,
+    .insight-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+/* ── Strategy Insight block ── */
+
+.insight-block {
+    margin-bottom: 4px;
+}
+
+.insight-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 12px;
+}
+
+.insight-card {
+    border: 1px solid var(--line-strong);
+    background: var(--panel-alt);
+    padding: 16px;
+    display: grid;
+    gap: 6px;
+}
+
+.insight-label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    color: var(--accent);
+}
+
+.insight-value {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.insight-detail {
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.insight-positive {
+    color: var(--accent);
+}
+
+.insight-negative {
+    color: var(--danger);
+}
+
+.insight-neutral {
+    color: var(--text);
+}
+
+.verdict-card {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    text-align: center;
+    min-width: 120px;
+}
+
+.verdict-badge {
+    display: inline-block;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.verdict-attractive {
+    background: rgba(84, 208, 200, 0.18);
+    color: var(--accent);
+    border: 1px solid rgba(84, 208, 200, 0.4);
+}
+
+.verdict-neutral {
+    background: rgba(146, 161, 171, 0.12);
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+}
+
+.verdict-unattractive {
+    background: rgba(255, 127, 127, 0.12);
+    color: var(--danger);
+    border: 1px solid rgba(255, 127, 127, 0.35);
+}
+
+/* ── Expandable raw metrics ── */
+
+.raw-metrics-details {
+    margin-top: 8px;
+}
+
+.raw-metrics-summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 10px 0;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.raw-metrics-summary::-webkit-details-marker {
+    display: none;
+}
+
+.raw-metrics-summary::before {
+    content: "▸";
+    display: inline-block;
+    transition: transform 0.15s ease;
+}
+
+.raw-metrics-details[open] > .raw-metrics-summary::before {
+    transform: rotate(90deg);
+}
+
+.tile-raw {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
 }
 
 @media (max-width: 720px) {

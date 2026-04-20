@@ -104,6 +104,22 @@ Functional meaning:
 - fixed windows are trailing windows from the latest matched historical date
 - `Custom` uses explicit date bounds
 
+## Canonical output boundary
+
+The screen must consume only canonical `EconomicMetrics`.
+
+Internal analysis contract:
+
+- `RawStrategyMetrics` is internal and signed
+- `EconomicMetrics` is the only safe UI/recommendation/export contract
+- the browser must not reinterpret signed raw strategy metrics
+
+Default historical matching:
+
+- the main screen uses contextual historical analogs
+- contextual analogs are matched by `underlying`, `expiry_type`, `option_type`, DTE / `time_bucket_15m`, `moneyness_bucket`, and structure type
+- exact strike-pair or exact structure matching is a separate drill-down concern, not the main default cohort path
+
 ### Dynamic leg inputs
 
 Published per leg as:
@@ -178,7 +194,24 @@ Functional meaning:
 
 Functional meaning:
 
-- percentile rank of the current structure premium inside the selected timeframe
+- the screen now distinguishes two percentile forms:
+  - raw price percentile: descriptive position of the current premium inside comparable historical premiums
+  - economic percentile: side-aware attractiveness percentile
+
+Interpretation rules:
+
+- seller setup:
+  - high economic percentile = rich credit
+  - low economic percentile = thin credit
+- buyer setup:
+  - high economic percentile = cheap debit
+  - low economic percentile = expensive debit
+
+Important:
+
+- low sample may reduce confidence
+- low sample must not invert the economic meaning
+- if sample quality is below threshold, percentile should be hidden or marked not reliable rather than flipped
 
 ### Vs history
 
@@ -187,6 +220,7 @@ Functional meaning:
 - current total premium minus historical average entry premium
 - positive means richer than history
 - negative means cheaper than history
+- this remains an economic comparison in premium points, not a confidence metric
 
 ### Avg expiry value
 
@@ -319,6 +353,7 @@ Functional meaning:
 Functional meaning:
 
 - human-readable explanation of why the candidate was ranked there
+- must be based on canonical `EconomicMetrics`, not raw signed values
 
 ## Download report
 
@@ -359,3 +394,4 @@ Every output on the screen must remain:
 - explainable in compact numeric form
 - suitable for fast structure testing without UI clutter
 - economically safe and trader-readable under the domain contract
+- driven by `EconomicMetrics` rather than browser-side sign reinterpretation

@@ -29,24 +29,48 @@ const els = {
     snapshotAveragePnl: document.getElementById("snapshot-average-pnl"),
     snapshotMedianPnl: document.getElementById("snapshot-median-pnl"),
     snapshotWinRate: document.getElementById("snapshot-win-rate"),
-    snapshotBestWorst: document.getElementById("snapshot-best-worst"),
+    snapshotBestWorst: document.getElementById("snapshot-bounds"),
+    snapshotBoundsLabel: document.getElementById("snapshot-bounds-label"),
+    snapshotAnchorNote: document.getElementById("snapshot-anchor-note"),
+    snapshotWinRateLabel: document.getElementById("snapshot-win-rate-label"),
+    snapshotPayoffRatio: document.getElementById("snapshot-payoff-ratio"),
+    snapshotExpectancy: document.getElementById("snapshot-expectancy"),
+    snapshotAverageEntryLabel: document.getElementById("snapshot-average-entry-label"),
+    snapshotMedianEntryLabel: document.getElementById("snapshot-median-entry-label"),
+    snapshotVsHistoryNote: document.getElementById("snapshot-vs-history-note"),
+    trendAvgHeader: document.getElementById("trend-avg-header"),
+    trendMedianHeader: document.getElementById("trend-median-header"),
+    trendVsCurrentHeader: document.getElementById("trend-vs-current-header"),
     timeframeTableBody: document.getElementById("timeframe-table-body"),
     trendLine: document.getElementById("trend-line"),
     trendPoints: document.getElementById("trend-points"),
     trendLabels: document.getElementById("trend-labels"),
     currentPriceLine: document.getElementById("current-price-line"),
     expiryPayout: document.getElementById("expiry-payout"),
+    expiryPayoutLabel: document.getElementById("expiry-payout-label"),
     expirySellerPnl: document.getElementById("expiry-seller-pnl"),
     expiryBuyerPnl: document.getElementById("expiry-buyer-pnl"),
-    expiryWinRate: document.getElementById("expiry-win-rate"),
+    expiryWinRate: document.getElementById("expiry-seller-win-rate"),
+    expiryBuyerWinRate: document.getElementById("expiry-buyer-win-rate"),
     expiryTailLoss: document.getElementById("expiry-tail-loss"),
     expiryDownside: document.getElementById("expiry-downside"),
+    expiryExpectancy: document.getElementById("expiry-expectancy"),
     recommendationPreferredTitle: document.getElementById("recommendation-preferred-title"),
     recommendationPreferredReason: document.getElementById("recommendation-preferred-reason"),
     recommendationAlternativeTitle: document.getElementById("recommendation-alternative-title"),
     recommendationAlternativeReason: document.getElementById("recommendation-alternative-reason"),
     recommendationAvoidTitle: document.getElementById("recommendation-avoid-title"),
-    recommendationAvoidReason: document.getElementById("recommendation-avoid-reason")
+    recommendationAvoidReason: document.getElementById("recommendation-avoid-reason"),
+    insightPremium: document.getElementById("insight-premium"),
+    insightPremiumDetail: document.getElementById("insight-premium-detail"),
+    insightEdge: document.getElementById("insight-edge"),
+    insightEdgeDetail: document.getElementById("insight-edge-detail"),
+    insightRisk: document.getElementById("insight-risk"),
+    insightRiskDetail: document.getElementById("insight-risk-detail"),
+    insightVerdict: document.getElementById("insight-verdict"),
+    snapshotAveragePnlRaw: document.getElementById("snapshot-average-pnl-raw"),
+    snapshotPayoffRatioRaw: document.getElementById("snapshot-payoff-ratio-raw"),
+    expiryTailLossRaw: document.getElementById("expiry-tail-loss-raw")
 };
 
 const strategyConfigs = {
@@ -146,7 +170,7 @@ const strategyConfigs = {
 
 const pointBucketSize = {
     NIFTY: 50,
-    BANKNIFTY: 100
+    BANKNIFTY: 50
 };
 
 let legsState = [];
@@ -238,8 +262,7 @@ function bucketSize() {
 function resetLegsForStrategy() {
     const strategy = strategyConfigs[els.strategyMode.value];
     const spot = numberValue(els.spot);
-    legsState = strategy.createLegs(spot, bucketSize());
-    legsState = legsState.map((leg) => ({
+    legsState = strategy.createLegs(spot, bucketSize()).map((leg) => ({
         ...leg,
         distance: leg.strike - spot
     }));
@@ -251,9 +274,9 @@ function addCustomLeg() {
         return;
     }
     const spot = numberValue(els.spot);
-    const nextIndex = legsState.length + 1;
+    const index = legsState.length + 1;
     legsState.push(createLegState({
-        label: `Custom leg ${nextIndex}`,
+        label: `Custom leg ${index}`,
         optionType: "CE",
         side: "LONG",
         strike: roundToBucket(spot, bucketSize()),
@@ -370,6 +393,12 @@ function syncStrikeFromDistance(index) {
     legsState[index].distance = distance;
 }
 
+function syncTimeframeFields() {
+    const isCustom = els.timeframe.value === "CUSTOM";
+    els.customFromField.hidden = !isCustom;
+    els.customToField.hidden = !isCustom;
+}
+
 function numberValue(input) {
     return Number.parseFloat(input.value || "0") || 0;
 }
@@ -382,41 +411,54 @@ function formatNumber(value, digits = 2) {
     return new Intl.NumberFormat("en-IN", {
         minimumFractionDigits: digits,
         maximumFractionDigits: digits
-    }).format(value);
+    }).format(Number(value || 0));
 }
 
 function formatSigned(value, digits = 2) {
-    const sign = value > 0 ? "+" : value < 0 ? "-" : "";
-    return `${sign}${formatNumber(Math.abs(value), digits)}`;
+    const number = Number(value || 0);
+    const sign = number > 0 ? "+" : number < 0 ? "-" : "";
+    return `${sign}${formatNumber(Math.abs(number), digits)}`;
 }
 
 function formatPercent(value, digits = 1) {
     return `${formatNumber(value, digits)}%`;
 }
 
-function syncTimeframeFields() {
-    const custom = els.timeframe.value === "CUSTOM";
-    els.customFromField.hidden = !custom;
-    els.customToField.hidden = !custom;
+function titleCase(value) {
+    const lower = String(value || "").toLowerCase();
+    return lower ? lower.charAt(0).toUpperCase() + lower.slice(1) : "";
+}
+
+function currentOrientation() {
+    return strategyConfigs[els.strategyMode.value]?.orientation || "BUYER";
+}
+
+function currentStrategyLabel() {
+    return strategyConfigs[els.strategyMode.value]?.label || "Strategy";
+}
+
+function currentEconomicPremiumFromInputs() {
+    const signed = legsState.reduce((sum, leg) => {
+        const sign = leg.side === "SHORT" ? -1 : 1;
+        return sum + (sign * Number(leg.entryPrice || 0));
+    }, 0);
+    return currentOrientation() === "SELLER" ? -signed : signed;
 }
 
 function currentInputs() {
-    const config = strategyConfigs[els.strategyMode.value];
     return {
         strategyMode: els.strategyMode.value,
-        strategyLabel: config.label,
-        orientation: config.orientation,
+        strategyLabel: currentStrategyLabel(),
+        orientation: currentOrientation(),
         underlying: els.underlying.value,
         expiryType: els.expiryType.value,
-        dte: Math.max(0, Math.round(numberValue(els.dte))),
+        dte: Number.parseInt(els.dte.value || "0", 10) || 0,
         spot: numberValue(els.spot),
         timeframe: els.timeframe.value,
-        customFrom: els.customFrom.value || "",
-        customTo: els.customTo.value || "",
-        legs: legsState.map((leg) => ({
-            ...leg
-        })),
-        currentTotalPremium: legsState.reduce((sum, leg) => sum + (Number(leg.entryPrice) || 0), 0)
+        customFrom: els.customFrom.value,
+        customTo: els.customTo.value,
+        legs: legsState.map((leg) => ({ ...leg })),
+        currentEconomicPremium: currentEconomicPremiumFromInputs()
     };
 }
 
@@ -424,18 +466,16 @@ function renderHeader() {
     const inputs = currentInputs();
     els.strategyChip.textContent = inputs.strategyLabel;
     els.orientationChip.textContent = titleCase(inputs.orientation);
-    els.timeframeChip.textContent = inputs.timeframe === "CUSTOM"
-        ? `${inputs.customFrom || "start"} -> ${inputs.customTo || "end"}`
-        : inputs.timeframe;
-    els.premiumChip.textContent = formatNumber(inputs.currentTotalPremium, 2);
-}
-
-function titleCase(value) {
-    return value.charAt(0) + value.slice(1).toLowerCase();
+    els.timeframeChip.textContent = inputs.timeframe;
+    els.premiumChip.textContent = `${formatNumber(inputs.currentEconomicPremium, 2)} pts`;
 }
 
 function setStatus(message) {
     els.statusLine.textContent = message;
+}
+
+function setText(target, value) {
+    target.textContent = value;
 }
 
 function setPlaceholderResults() {
@@ -450,26 +490,46 @@ function setPlaceholderResults() {
         els.snapshotMedianPnl,
         els.snapshotWinRate,
         els.snapshotBestWorst,
+        els.snapshotBoundsLabel,
+        els.snapshotAnchorNote,
+        els.snapshotPayoffRatio,
+        els.snapshotExpectancy,
         els.expiryPayout,
         els.expirySellerPnl,
         els.expiryBuyerPnl,
         els.expiryWinRate,
+        els.expiryBuyerWinRate,
         els.expiryTailLoss,
-        els.expiryDownside
-    ].forEach((element) => {
-        element.textContent = "-";
-    });
+        els.expiryDownside,
+        els.expiryExpectancy,
+        els.recommendationPreferredTitle,
+        els.recommendationPreferredReason,
+        els.recommendationAlternativeTitle,
+        els.recommendationAlternativeReason,
+        els.recommendationAvoidTitle,
+        els.recommendationAvoidReason,
+        els.insightPremium,
+        els.insightPremiumDetail,
+        els.insightEdge,
+        els.insightEdgeDetail,
+        els.insightRisk,
+        els.insightRiskDetail
+    ].forEach((node) => setText(node, "-"));
 
-    els.recommendationPreferredTitle.textContent = "-";
-    els.recommendationPreferredReason.textContent = "-";
-    els.recommendationAlternativeTitle.textContent = "-";
-    els.recommendationAlternativeReason.textContent = "-";
-    els.recommendationAvoidTitle.textContent = "-";
-    els.recommendationAvoidReason.textContent = "-";
-
-    els.timeframeTableBody.innerHTML = ["5Y", "2Y", "1Y", "6M", "3M", "1M"]
-        .map((label) => `<tr><td>${label}</td><td>-</td><td>-</td><td>-</td></tr>`)
-        .join("");
+    els.snapshotAveragePnlRaw.textContent = "";
+    els.snapshotPayoffRatioRaw.textContent = "";
+    els.expiryTailLossRaw.textContent = "";
+    els.insightVerdict.textContent = "-";
+    els.insightVerdict.className = "verdict-badge verdict-neutral";
+    els.snapshotAverageEntryLabel.innerHTML = 'Average entry <small class="unit">pts</small>';
+    els.snapshotMedianEntryLabel.innerHTML = 'Median entry <small class="unit">pts</small>';
+    els.snapshotVsHistoryNote.textContent = "Positive means current premium is above the matched average.";
+    els.snapshotWinRateLabel.textContent = "Win rate";
+    els.expiryPayoutLabel.innerHTML = 'Average expiry value <small class="unit">pts</small>';
+    els.trendAvgHeader.textContent = "Avg";
+    els.trendMedianHeader.textContent = "Median";
+    els.trendVsCurrentHeader.textContent = "Vs current";
+    els.timeframeTableBody.innerHTML = ["5Y", "2Y", "1Y", "6M", "3M", "1M"].map((label) => `<tr><td>${label}</td><td>-</td><td>-</td><td>-</td></tr>`).join("");
     els.trendLine.setAttribute("points", "");
     els.trendPoints.innerHTML = "";
     els.trendLabels.innerHTML = "";
@@ -481,8 +541,16 @@ function setPlaceholderResults() {
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
     if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Request failed");
+        let detail = `${response.status} ${response.statusText}`;
+        try {
+            const payload = await response.json();
+            if (payload.error) {
+                detail = payload.details ? `${payload.error}: ${payload.details}` : payload.error;
+            }
+        } catch (error) {
+            // ignore parse failures
+        }
+        throw new Error(detail);
     }
     return response.json();
 }
@@ -490,7 +558,8 @@ async function fetchJson(url, options = {}) {
 async function runAnalysis() {
     const inputs = currentInputs();
     renderHeader();
-    setStatus(`Running ${inputs.strategyLabel} against canonical historical structure matches.`);
+    setStatus(`Running canonical historical structure query for ${inputs.strategyLabel}...`);
+
     if (strategyAbortController) {
         strategyAbortController.abort();
     }
@@ -530,9 +599,10 @@ async function runAnalysis() {
             signal: strategyAbortController.signal
         });
 
-        applyStrategyAnalysis(payload);
+        applyStrategyAnalysis(payload, inputs);
         latestReportPayload = { inputs, payload };
-        setStatus(`Structure query complete with ${payload.observationCount} matched historical structures for ${inputs.strategyLabel}.`);
+        const warning = payload.observation?.lowSampleWarning ? ` ${payload.observation.lowSampleWarning}` : "";
+        setStatus(`EconomicMetrics loaded from canonical history: ${payload.observation?.observationCount || 0} matched structures.${warning}`);
     } catch (error) {
         if (error.name === "AbortError") {
             return;
@@ -542,58 +612,125 @@ async function runAnalysis() {
     }
 }
 
-function applyStrategyAnalysis(payload) {
-    els.snapshotObservations.textContent = `${Number(payload.observationCount || 0)}`;
-    els.snapshotAverageEntry.textContent = formatNumber(Number(payload.snapshot?.averageEntryPremium || 0), 2);
-    els.snapshotMedianEntry.textContent = formatNumber(Number(payload.snapshot?.medianEntryPremium || 0), 2);
-    els.snapshotPercentile.textContent = payload.snapshot?.currentPremiumPercentile ? `${payload.snapshot.currentPremiumPercentile}th` : "n/a";
-    els.snapshotVsHistory.textContent = formatSigned(Number(payload.snapshot?.currentVsHistoricalAverage || 0), 2);
-    els.snapshotExpiryValue.textContent = formatNumber(Number(payload.snapshot?.averageExpiryValue || 0), 2);
-    els.snapshotAveragePnl.textContent = formatSigned(Number(payload.snapshot?.averagePnl || 0), 2);
-    els.snapshotMedianPnl.textContent = formatSigned(Number(payload.snapshot?.medianPnl || 0), 2);
-    els.snapshotWinRate.textContent = formatPercent(Number(payload.snapshot?.winRatePct || 0), 1);
-    els.snapshotBestWorst.textContent = `${formatSigned(Number(payload.snapshot?.bestCase || 0), 2)} / ${formatSigned(Number(payload.snapshot?.worstCase || 0), 2)}`;
-
-    els.expiryPayout.textContent = formatNumber(Number(payload.expiryOutcome?.averageExpiryPayout || 0), 2);
-    els.expirySellerPnl.textContent = formatSigned(Number(payload.expiryOutcome?.averageSellerPnl || 0), 2);
-    els.expiryBuyerPnl.textContent = formatSigned(Number(payload.expiryOutcome?.averageBuyerPnl || 0), 2);
-    els.expiryWinRate.textContent = formatPercent(Number(payload.expiryOutcome?.winRatePct || 0), 1);
-    els.expiryTailLoss.textContent = formatSigned(Number(payload.expiryOutcome?.tailLossP10 || 0), 2);
-    els.expiryDownside.textContent = payload.expiryOutcome?.downsideProfile || "-";
-
+function applyStrategyAnalysis(payload, inputs) {
+    renderHeader();
+    applyInsight(payload.insight, payload.observation);
+    applySnapshot(payload);
+    applyPremiumTrend(payload.timeframeTrend);
+    applyExpiry(payload);
     applyRecommendation("preferred", payload.recommendation?.preferred);
     applyRecommendation("alternative", payload.recommendation?.alternative);
     applyRecommendation("avoid", payload.recommendation?.avoid);
-    applyPremiumTrend(payload.premiumWindows || [], Number(payload.currentTotalPremium || 0));
-}
-
-function applyRecommendation(slot, recommendation) {
-    const titleTarget = els[`recommendation${capitalize(slot)}Title`];
-    const reasonTarget = els[`recommendation${capitalize(slot)}Reason`];
-    if (!recommendation) {
-        titleTarget.textContent = "-";
-        reasonTarget.textContent = "-";
-        return;
+    if (payload.recommendation?.contextNote) {
+        els.recommendationAvoidReason.textContent = `${payload.recommendation.avoid?.reason || "-"} ${payload.recommendation.contextNote}`.trim();
     }
-    titleTarget.textContent = `${strategyLabel(recommendation.mode)} / ${titleCase(recommendation.orientation)}`;
-    reasonTarget.textContent = recommendation.reason || "-";
+    els.premiumChip.textContent = `${formatNumber(payload.premium?.currentPremiumPoints || inputs.currentEconomicPremium, 2)} pts`;
 }
 
-function capitalize(value) {
-    return value.charAt(0).toUpperCase() + value.slice(1);
+function applyInsight(insight, observation) {
+    els.insightPremium.textContent = insight?.premiumVerdict || "-";
+    els.insightPremiumDetail.textContent = insight?.premiumDetail || "-";
+    els.insightEdge.textContent = insight?.edgeVerdict || "-";
+    els.insightEdgeDetail.textContent = insight?.edgeDetail || "-";
+    els.insightRisk.textContent = insight?.riskVerdict || "-";
+    els.insightRiskDetail.textContent = insight?.riskDetail || "-";
+    els.insightVerdict.textContent = insight?.overallVerdict || "-";
+    els.insightVerdict.className = `verdict-badge ${verdictClass(insight?.overallVerdict, observation?.lowSampleDowngrade)}`;
 }
 
-function strategyLabel(mode) {
-    return strategyConfigs[mode]?.label || mode;
+function verdictClass(text, lowSample) {
+    if (lowSample) {
+        return "verdict-neutral";
+    }
+    const value = String(text || "").toLowerCase();
+    if (value.includes("supportive") || value.includes("preferred")) {
+        return "verdict-positive";
+    }
+    if (value.includes("unattractive") || value.includes("avoid")) {
+        return "verdict-negative";
+    }
+    return "verdict-neutral";
 }
 
-function applyPremiumTrend(windows, currentPremium) {
+function applySnapshot(payload) {
+    const observation = payload.observation || {};
+    const premium = payload.premium || {};
+    const expiry = payload.expiry || {};
+    const pnl = payload.pnl || {};
+    const risk = payload.risk || {};
+
+    els.snapshotAverageEntryLabel.innerHTML = `${premium.averageEntryLabel || "Average entry"} <small class="unit">pts</small>`;
+    els.snapshotMedianEntryLabel.innerHTML = `${premium.medianEntryLabel || "Median entry"} <small class="unit">pts</small>`;
+    els.snapshotVsHistoryNote.textContent = "Positive means current premium is above the matched average for the selected side.";
+    els.snapshotWinRateLabel.textContent = `${pnl.selectedSideLabel || expiry.selectedSideLabel || "Selected side"} win rate`;
+    els.expiryPayoutLabel.innerHTML = `${expiry.averageExpiryValueLabel || "Average expiry value"} <small class="unit">pts</small>`;
+    els.trendAvgHeader.textContent = premium.averageEntryLabel || "Average entry";
+    els.trendMedianHeader.textContent = premium.medianEntryLabel || "Median entry";
+    els.trendVsCurrentHeader.textContent = "Current vs avg";
+
+    els.snapshotObservations.textContent = `${observation.observationCount || 0}`;
+    els.snapshotAverageEntry.textContent = formatNumber(premium.averageEntryPoints || 0, 2);
+    els.snapshotMedianEntry.textContent = formatNumber(premium.medianEntryPoints || 0, 2);
+    els.snapshotPercentile.textContent = percentileText(
+        premium.rawPricePercentile,
+        premium.economicPercentile,
+        premium.percentileReliable
+    );
+    els.snapshotVsHistory.textContent = `${formatSigned(premium.currentVsAveragePoints || 0, 2)} pts`;
+    els.snapshotExpiryValue.textContent = formatNumber(expiry.averageExpiryValuePoints || 0, 2);
+    els.snapshotAveragePnl.textContent = `${formatSigned(pnl.averagePnlPoints || 0, 2)} pts`;
+    els.snapshotAveragePnlRaw.textContent = pnl.expectancyLabel || "";
+    els.snapshotMedianPnl.textContent = `${formatSigned(pnl.medianPnlPoints || 0, 2)} pts`;
+    els.snapshotWinRate.textContent = formatPercent(expiry.selectedSideWinRatePct || 0, 1);
+    els.snapshotBestWorst.textContent = `${boundText(risk.currentTheoreticalMaxProfitPoints)} / ${boundText(risk.currentTheoreticalMaxLossPoints)}`;
+    els.snapshotBoundsLabel.textContent = [risk.boundsLabel, risk.lowSampleWarning].filter(Boolean).join(" | ");
+    els.snapshotPayoffRatio.textContent = payoffLabel(pnl.payoffRatio);
+    els.snapshotPayoffRatioRaw.textContent = Number.isFinite(pnl.payoffRatio) && pnl.payoffRatio > 0 ? `Raw ratio ${formatNumber(pnl.payoffRatio, 2)}` : "";
+    els.snapshotExpectancy.textContent = `${formatSigned(pnl.expectancyPoints || 0, 2)} pts`;
+    els.snapshotAnchorNote.textContent = [observation.anchorDate ? `Anchor ${observation.anchorDate}` : "", observation.evidenceStrength].filter(Boolean).join(" | ");
+}
+
+function percentileText(rawPercentile, economicPercentile, percentileReliable = true) {
+    const raw = Number(rawPercentile || 0);
+    const economic = Number(economicPercentile || 0);
+    if ((!raw && !economic) || percentileReliable === false) {
+        return percentileReliable === false ? "Not reliable (low sample)" : "-";
+    }
+    if (!raw && !economic) {
+        return "-";
+    }
+    return `Price ${raw}th / Economic ${economic}th`;
+}
+
+function payoffLabel(payoffRatio) {
+    const value = Number(payoffRatio || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "-";
+    }
+    if (value >= 2.0) {
+        return "Asymmetric upside";
+    }
+    if (value >= 1.0) {
+        return "Balanced payoff";
+    }
+    return "Thin payoff";
+}
+
+function boundText(value) {
+    if (value === null || value === undefined) {
+        return "Unlimited";
+    }
+    return `${formatNumber(value, 2)} pts`;
+}
+
+function applyPremiumTrend(timeframeTrend) {
+    const windows = timeframeTrend?.windows || [];
     els.timeframeTableBody.innerHTML = windows.map((item) => `
         <tr>
             <td>${item.label}</td>
-            <td>${item.observationCount > 0 ? formatNumber(Number(item.averageTotalPremium || 0), 2) : "-"}</td>
-            <td>${item.observationCount > 0 ? formatNumber(Number(item.medianPremium || 0), 2) : "-"}</td>
-            <td>${item.observationCount > 0 ? formatSigned(Number(item.currentVsHistoricalAverage || 0), 2) : "-"}</td>
+            <td>${item.observationCount > 0 ? formatNumber(item.averagePremiumPoints || 0, 2) : "-"}</td>
+            <td>${item.observationCount > 0 ? formatNumber(item.medianPremiumPoints || 0, 2) : "-"}</td>
+            <td>${item.observationCount > 0 ? `${formatSigned(item.currentVsAveragePoints || 0, 2)} pts` : "-"}</td>
         </tr>
     `).join("");
 
@@ -607,8 +744,8 @@ function applyPremiumTrend(windows, currentPremium) {
         return;
     }
 
-    const values = chartWindows.map((item) => Number(item.averageTotalPremium || 0));
-    values.push(currentPremium);
+    const currentPremium = Number(timeframeTrend.currentPremiumPoints || 0);
+    const values = chartWindows.map((item) => Number(item.averagePremiumPoints || 0)).concat(currentPremium);
     const minValue = Math.min(...values);
     const maxValue = Math.max(...values);
     const padTop = 20;
@@ -617,6 +754,7 @@ function applyPremiumTrend(windows, currentPremium) {
     const startX = 44;
     const endX = 616;
     const stepX = chartWindows.length > 1 ? (endX - startX) / (chartWindows.length - 1) : 0;
+
     const valueToY = (value) => {
         if (maxValue === minValue) {
             return padTop + (plotHeight / 2);
@@ -625,19 +763,18 @@ function applyPremiumTrend(windows, currentPremium) {
         return padTop + ((1 - ratio) * plotHeight);
     };
 
-    const points = chartWindows.map((item, index) => {
-        const x = startX + (index * stepX);
-        const y = valueToY(Number(item.averageTotalPremium || 0));
-        return { x, y, label: item.label, value: Number(item.averageTotalPremium || 0) };
-    });
+    const points = chartWindows.map((item, index) => ({
+        x: startX + (index * stepX),
+        y: valueToY(Number(item.averagePremiumPoints || 0)),
+        label: item.label,
+        value: Number(item.averagePremiumPoints || 0)
+    }));
 
     els.trendLine.setAttribute("points", points.map((point) => `${point.x},${point.y}`).join(" "));
     const currentY = valueToY(currentPremium);
     els.currentPriceLine.setAttribute("y1", `${currentY}`);
     els.currentPriceLine.setAttribute("y2", `${currentY}`);
-    els.trendPoints.innerHTML = points.map((point) => `
-        <circle class="trend-point" cx="${point.x}" cy="${point.y}" r="4"></circle>
-    `).join("");
+    els.trendPoints.innerHTML = points.map((point) => `<circle class="trend-point" cx="${point.x}" cy="${point.y}" r="4"></circle>`).join("");
     els.trendLabels.innerHTML = points.map((point) => `
         <g>
             <text class="trend-value-label" x="${point.x}" y="${point.y - 10}" text-anchor="middle">${formatNumber(point.value, 1)}</text>
@@ -646,12 +783,68 @@ function applyPremiumTrend(windows, currentPremium) {
     `).join("");
 }
 
+function applyExpiry(payload) {
+    const expiry = payload.expiry || {};
+    const pnl = payload.pnl || {};
+    const risk = payload.risk || {};
+    const selectedSide = String(expiry.selectedSideLabel || "Selected").toLowerCase();
+    const oppositeSide = selectedSide === "seller" ? "buyer" : "seller";
+
+    els.expiryPayout.textContent = `${formatNumber(expiry.averageExpiryPayoutPoints || expiry.averageExpiryValuePoints || 0, 2)} pts`;
+    els.expirySellerPnl.textContent = `${formatSigned(selectedSide === "seller" ? expiry.selectedSideAveragePnlPoints || 0 : expiry.oppositeSideAveragePnlPoints || 0, 2)} pts`;
+    els.expiryBuyerPnl.textContent = `${formatSigned(selectedSide === "buyer" ? expiry.selectedSideAveragePnlPoints || 0 : expiry.oppositeSideAveragePnlPoints || 0, 2)} pts`;
+    els.expiryWinRate.textContent = formatPercent(selectedSide === "seller" ? expiry.selectedSideWinRatePct || 0 : expiry.oppositeSideWinRatePct || 0, 1);
+    els.expiryBuyerWinRate.textContent = formatPercent(selectedSide === "buyer" ? expiry.selectedSideWinRatePct || 0 : expiry.oppositeSideWinRatePct || 0, 1);
+    els.expiryTailLoss.textContent = risk.downsideProfile || "-";
+    els.expiryTailLossRaw.textContent = `${risk.historicalExtremesLabel || "Historical sample"} | P10 ${formatSigned(risk.tailLossP10Points || 0, 2)} pts`;
+    els.expiryDownside.textContent = [risk.boundsLabel, `${selectedSide} primary / ${oppositeSide} opposite`].join(" | ");
+    els.expiryExpectancy.textContent = `${formatSigned(pnl.expectancyPoints || 0, 2)} pts`;
+}
+
+function applyRecommendation(slot, recommendation) {
+    const titleTarget = els[`recommendation${capitalize(slot)}Title`];
+    const reasonTarget = els[`recommendation${capitalize(slot)}Reason`];
+    if (!recommendation) {
+        titleTarget.textContent = "-";
+        reasonTarget.textContent = "-";
+        return;
+    }
+    titleTarget.textContent = recommendation.title || `${strategyLabel(recommendation.mode)} / ${titleCase(recommendation.orientation)}`;
+    const reasonParts = [
+        recommendation.verdict,
+        `${recommendation.observationCount || 0} observations`,
+        recommendation.economicPercentile ? `economic ${recommendation.economicPercentile}th` : "",
+        Number.isFinite(recommendation.averagePnlPoints) ? `avg pnl ${formatSigned(recommendation.averagePnlPoints, 2)} pts` : "",
+        Number.isFinite(recommendation.winRatePct) ? `win rate ${formatPercent(recommendation.winRatePct, 1)}` : "",
+        recommendation.lowSampleWarning || "",
+        recommendation.reason || ""
+    ].filter(Boolean);
+    reasonTarget.textContent = reasonParts.join(" | ");
+}
+
+function capitalize(value) {
+    return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function strategyLabel(mode) {
+    return strategyConfigs[mode]?.label || mode;
+}
+
 function downloadReport() {
     if (!latestReportPayload) {
         setStatus("Run analysis before downloading the report.");
         return;
     }
+
     const { inputs, payload } = latestReportPayload;
+    const observation = payload.observation || {};
+    const premium = payload.premium || {};
+    const expiry = payload.expiry || {};
+    const pnl = payload.pnl || {};
+    const risk = payload.risk || {};
+    const insight = payload.insight || {};
+    const recommendation = payload.recommendation || {};
+
     const rows = [
         ["Section", "Metric", "Value"],
         ["Scenario", "Strategy", inputs.strategyLabel],
@@ -661,31 +854,72 @@ function downloadReport() {
         ["Scenario", "DTE", inputs.dte],
         ["Scenario", "Spot", inputs.spot],
         ["Scenario", "Timeframe", inputs.timeframe],
-        ["Scenario", "Current total premium", inputs.currentTotalPremium],
-        ["Snapshot", "Observations", payload.observationCount],
-        ["Snapshot", "Average entry premium", payload.snapshot?.averageEntryPremium ?? 0],
-        ["Snapshot", "Median entry premium", payload.snapshot?.medianEntryPremium ?? 0],
-        ["Snapshot", "Current premium percentile", payload.snapshot?.currentPremiumPercentile ?? 0],
-        ["Snapshot", "Current vs historical average", payload.snapshot?.currentVsHistoricalAverage ?? 0],
-        ["Snapshot", "Average expiry value", payload.snapshot?.averageExpiryValue ?? 0],
-        ["Snapshot", "Average PnL", payload.snapshot?.averagePnl ?? 0],
-        ["Snapshot", "Median PnL", payload.snapshot?.medianPnl ?? 0],
-        ["Snapshot", "Win rate pct", payload.snapshot?.winRatePct ?? 0],
-        ["Snapshot", "Best case", payload.snapshot?.bestCase ?? 0],
-        ["Snapshot", "Worst case", payload.snapshot?.worstCase ?? 0],
-        ["Expiry", "Average payout", payload.expiryOutcome?.averageExpiryPayout ?? 0],
-        ["Expiry", "Average seller PnL", payload.expiryOutcome?.averageSellerPnl ?? 0],
-        ["Expiry", "Average buyer PnL", payload.expiryOutcome?.averageBuyerPnl ?? 0],
-        ["Expiry", "Win rate pct", payload.expiryOutcome?.winRatePct ?? 0],
-        ["Expiry", "Tail loss P10", payload.expiryOutcome?.tailLossP10 ?? 0],
-        ["Expiry", "Downside profile", payload.expiryOutcome?.downsideProfile ?? ""],
-        ["Recommendation", "Preferred", payload.recommendation?.preferred?.mode ?? ""],
-        ["Recommendation", "Preferred reason", payload.recommendation?.preferred?.reason ?? ""],
-        ["Recommendation", "Alternative", payload.recommendation?.alternative?.mode ?? ""],
-        ["Recommendation", "Alternative reason", payload.recommendation?.alternative?.reason ?? ""],
-        ["Recommendation", "Avoid", payload.recommendation?.avoid?.mode ?? ""],
-        ["Recommendation", "Avoid reason", payload.recommendation?.avoid?.reason ?? ""]
+        ["Scenario", premium.currentPremiumLabel || "Current premium", premium.currentPremiumPoints ?? inputs.currentEconomicPremium],
+        ["Observation", "Anchor date", observation.anchorDate || ""],
+        ["Observation", "Observation count", observation.observationCount || 0],
+        ["Observation", "Evidence strength", observation.evidenceStrength || ""],
+        ["Observation", "Low sample warning", observation.lowSampleWarning || ""],
+        ["Premium", premium.averageEntryLabel || "Average entry", premium.averageEntryPoints ?? 0],
+        ["Premium", premium.medianEntryLabel || "Median entry", premium.medianEntryPoints ?? 0],
+        ["Premium", "Raw price percentile", premium.rawPricePercentile ?? 0],
+        ["Premium", "Economic percentile", premium.economicPercentile ?? 0],
+        ["Premium", "Current vs average pts", premium.currentVsAveragePoints ?? 0],
+        ["Premium", "Current vs average pct", premium.currentVsAveragePct ?? 0],
+        ["Premium", "Price condition", premium.priceConditionLabel || ""],
+        ["Premium", "Attractiveness label", premium.attractivenessLabel || ""],
+        ["Expiry", expiry.averageExpiryValueLabel || "Average expiry value", expiry.averageExpiryValuePoints ?? 0],
+        ["Expiry", "Average expiry payout pts", expiry.averageExpiryPayoutPoints ?? 0],
+        ["Expiry", `${expiry.selectedSideLabel || "Selected"} avg pnl pts`, expiry.selectedSideAveragePnlPoints ?? 0],
+        ["Expiry", "Opposite side avg pnl pts", expiry.oppositeSideAveragePnlPoints ?? 0],
+        ["Expiry", `${expiry.selectedSideLabel || "Selected"} win rate pct`, expiry.selectedSideWinRatePct ?? 0],
+        ["Expiry", "Opposite side win rate pct", expiry.oppositeSideWinRatePct ?? 0],
+        ["PnL", "Average pnl pts", pnl.averagePnlPoints ?? 0],
+        ["PnL", "Median pnl pts", pnl.medianPnlPoints ?? 0],
+        ["PnL", "Average win pnl pts", pnl.avgWinPnlPoints ?? 0],
+        ["PnL", "Average loss pnl pts", pnl.avgLossPnlPoints ?? 0],
+        ["PnL", "Payoff ratio", pnl.payoffRatio ?? 0],
+        ["PnL", "Expectancy pts", pnl.expectancyPoints ?? 0],
+        ["PnL", "Expectancy label", pnl.expectancyLabel || ""],
+        ["Risk", "Current theoretical max profit pts", risk.currentTheoreticalMaxProfitPoints ?? "Unlimited"],
+        ["Risk", "Current theoretical max loss pts", risk.currentTheoreticalMaxLossPoints ?? "Unlimited"],
+        ["Risk", "Bounds label", risk.boundsLabel || ""],
+        ["Risk", "Tail loss P10 pts", risk.tailLossP10Points ?? 0],
+        ["Risk", "Downside profile", risk.downsideProfile || ""],
+        ["Risk", "Historical best pnl pts", risk.historicalBestPnlPoints ?? 0],
+        ["Risk", "Historical worst pnl pts", risk.historicalWorstPnlPoints ?? 0],
+        ["Risk", "Historical extremes label", risk.historicalExtremesLabel || ""],
+        ["Insight", "Premium verdict", insight.premiumVerdict || ""],
+        ["Insight", "Premium detail", insight.premiumDetail || ""],
+        ["Insight", "Edge verdict", insight.edgeVerdict || ""],
+        ["Insight", "Edge detail", insight.edgeDetail || ""],
+        ["Insight", "Risk verdict", insight.riskVerdict || ""],
+        ["Insight", "Risk detail", insight.riskDetail || ""],
+        ["Insight", "Overall verdict", insight.overallVerdict || ""],
+        ["Insight", "Overall detail", insight.overallDetail || ""],
+        ["Recommendation", "Context note", recommendation.contextNote || ""]
     ];
+
+    [
+        ["Preferred", recommendation.preferred],
+        ["Alternative", recommendation.alternative],
+        ["Avoid", recommendation.avoid]
+    ].forEach(([label, candidate]) => {
+        if (!candidate) {
+            return;
+        }
+        rows.push(["Recommendation", `${label} title`, candidate.title || ""]);
+        rows.push(["Recommendation", `${label} verdict`, candidate.verdict || ""]);
+        rows.push(["Recommendation", `${label} score`, candidate.score ?? 0]);
+        rows.push(["Recommendation", `${label} observations`, candidate.observationCount ?? 0]);
+        rows.push(["Recommendation", `${label} raw percentile`, candidate.rawPricePercentile ?? 0]);
+        rows.push(["Recommendation", `${label} economic percentile`, candidate.economicPercentile ?? 0]);
+        rows.push(["Recommendation", `${label} premium vs average pts`, candidate.premiumVsAveragePoints ?? 0]);
+        rows.push(["Recommendation", `${label} avg pnl pts`, candidate.averagePnlPoints ?? 0]);
+        rows.push(["Recommendation", `${label} win rate pct`, candidate.winRatePct ?? 0]);
+        rows.push(["Recommendation", `${label} downside severity pts`, candidate.downsideSeverityPoints ?? 0]);
+        rows.push(["Recommendation", `${label} low sample warning`, candidate.lowSampleWarning || ""]);
+        rows.push(["Recommendation", `${label} reason`, candidate.reason || ""]);
+    });
 
     inputs.legs.forEach((leg, index) => {
         rows.push(["Leg", `Leg ${index + 1} label`, leg.label]);
@@ -695,21 +929,24 @@ function downloadReport() {
         rows.push(["Leg", `Leg ${index + 1} entry price`, leg.entryPrice]);
     });
 
-    (payload.premiumWindows || []).forEach((item) => {
-        rows.push(["Premium trend", `${item.label} avg total premium`, item.averageTotalPremium]);
-        rows.push(["Premium trend", `${item.label} median premium`, item.medianPremium]);
-        rows.push(["Premium trend", `${item.label} current vs historical average`, item.currentVsHistoricalAverage]);
-        rows.push(["Premium trend", `${item.label} observations`, item.observationCount]);
+    (payload.timeframeTrend?.windows || []).forEach((item) => {
+        rows.push(["Trend", `${item.label} average premium pts`, item.averagePremiumPoints ?? 0]);
+        rows.push(["Trend", `${item.label} median premium pts`, item.medianPremiumPoints ?? 0]);
+        rows.push(["Trend", `${item.label} raw percentile`, item.rawPricePercentile ?? 0]);
+        rows.push(["Trend", `${item.label} economic percentile`, item.economicPercentile ?? 0]);
+        rows.push(["Trend", `${item.label} current vs average pts`, item.currentVsAveragePoints ?? 0]);
+        rows.push(["Trend", `${item.label} observations`, item.observationCount ?? 0]);
     });
 
-    (payload.matchedCases || []).forEach((item, index) => {
-        rows.push(["Matched case", `Case ${index + 1} trade date`, item.tradeDate]);
-        rows.push(["Matched case", `Case ${index + 1} expiry date`, item.expiryDate]);
-        rows.push(["Matched case", `Case ${index + 1} total entry premium`, item.totalEntryPremium]);
-        rows.push(["Matched case", `Case ${index + 1} expiry value`, item.expiryValue]);
-        rows.push(["Matched case", `Case ${index + 1} selected pnl`, item.selectedPnl]);
-        rows.push(["Matched case", `Case ${index + 1} buyer pnl`, item.buyerPnl]);
-        rows.push(["Matched case", `Case ${index + 1} seller pnl`, item.sellerPnl]);
+    (payload.historicalCases || []).forEach((item, index) => {
+        rows.push(["Historical case", `Case ${index + 1} trade date`, item.tradeDate]);
+        rows.push(["Historical case", `Case ${index + 1} expiry date`, item.expiryDate]);
+        rows.push(["Historical case", `Case ${index + 1} entry premium pts`, item.entryPremiumPoints]);
+        rows.push(["Historical case", `Case ${index + 1} expiry value pts`, item.expiryValuePoints]);
+        rows.push(["Historical case", `Case ${index + 1} selected side pnl pts`, item.selectedSidePnlPoints]);
+        rows.push(["Historical case", `Case ${index + 1} buyer pnl pts`, item.buyerPnlPoints]);
+        rows.push(["Historical case", `Case ${index + 1} seller pnl pts`, item.sellerPnlPoints]);
+        rows.push(["Historical case", `Case ${index + 1} label`, item.historicalExtremesLabel || ""]);
     });
 
     const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");

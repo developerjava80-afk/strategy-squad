@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Computes compact multi-leg strategy metrics from matched historical scenarios.
+ * Computes signed raw strategy metrics from matched historical scenarios.
  */
 public final class StrategyAnalysisCalculator {
     private static final List<String> WINDOW_LABELS = List.of("5Y", "2Y", "1Y", "6M", "3M", "1M");
@@ -16,38 +16,35 @@ public final class StrategyAnalysisCalculator {
     private StrategyAnalysisCalculator() {
     }
 
-    public static StrategyAnalysisSnapshot calculate(
+    public static RawStrategyMetrics calculate(
             String mode,
             String orientation,
             String timeframe,
-            double currentTotalPremium,
+            double currentNetPremium,
             List<StrategyScenario> scenarios,
-            List<StrategyAnalysisSnapshot.StrategyRecommendation> rankedRecommendations
+            TheoreticalBoundsInput boundsInput
     ) {
         Objects.requireNonNull(mode, "mode must not be null");
         Objects.requireNonNull(orientation, "orientation must not be null");
         Objects.requireNonNull(timeframe, "timeframe must not be null");
         Objects.requireNonNull(scenarios, "scenarios must not be null");
-        Objects.requireNonNull(rankedRecommendations, "rankedRecommendations must not be null");
+
+        String premiumType = currentNetPremium >= 0 ? "NET_DEBIT" : "NET_CREDIT";
+        RawStrategyMetrics.TheoreticalBounds bounds = computeBounds(boundsInput, currentNetPremium);
 
         if (scenarios.isEmpty()) {
-            StrategyAnalysisSnapshot.Summary emptySummary = new StrategyAnalysisSnapshot.Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            StrategyAnalysisSnapshot.ExpiryOutcome emptyOutcome = new StrategyAnalysisSnapshot.ExpiryOutcome(0, 0, 0, 0, 0, "No history");
-            StrategyAnalysisSnapshot.RecommendationSummary emptyRecommendation = new StrategyAnalysisSnapshot.RecommendationSummary(
-                    emptyRecommendation(mode, orientation, "No candidate strategy has usable history."),
-                    emptyRecommendation("N/A", "N/A", "No alternative strategy has usable history."),
-                    emptyRecommendation("N/A", "N/A", "No avoid signal because no candidates matched.")
-            );
-            return new StrategyAnalysisSnapshot(
+            return new RawStrategyMetrics(
                     mode,
                     orientation,
                     timeframe,
+                    "",
                     0,
-                    currentTotalPremium,
-                    emptySummary,
-                    emptyWindows(currentTotalPremium),
-                    emptyOutcome,
-                    emptyRecommendation,
+                    currentNetPremium,
+                    premiumType,
+                    new RawStrategyMetrics.Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                    emptyWindows(currentNetPremium),
+                    new RawStrategyMetrics.ExpiryOutcome(0, 0, 0, 0, 0, 0, "No history", 0),
+                    bounds,
                     List.of()
             );
         }
@@ -62,141 +59,189 @@ public final class StrategyAnalysisCalculator {
             selectedWindow = sorted;
         }
 
-        List<StrategyAnalysisSnapshot.PremiumWindow> windows = WINDOW_LABELS.stream()
-                .map(label -> toWindow(label, currentTotalPremium, filterRange(sorted, resolveRange(label, anchorDate))))
+        List<RawStrategyMetrics.PremiumWindow> windows = WINDOW_LABELS.stream()
+                .map(label -> toWindow(label, currentNetPremium, filterRange(sorted, resolveRange(label, anchorDate)), orientation))
                 .toList();
 
-        StrategyAnalysisSnapshot.Summary summary = buildSummary(selectedWindow, currentTotalPremium);
-        StrategyAnalysisSnapshot.ExpiryOutcome expiryOutcome = buildExpiryOutcome(selectedWindow, orientation);
-        StrategyAnalysisSnapshot.RecommendationSummary recommendation = buildRecommendationSummary(rankedRecommendations);
-        List<StrategyAnalysisSnapshot.MatchedCase> cases = sorted.stream()
-                .sorted(Comparator.comparingDouble(item -> Math.abs(item.totalEntryPremium() - currentTotalPremium)))
+        List<RawStrategyMetrics.HistoricalCase> cases = sorted.stream()
+                .sorted(Comparator.comparingDouble(item -> Math.abs(item.netEntryPremium() - currentNetPremium)))
                 .limit(20)
-                .map(item -> new StrategyAnalysisSnapshot.MatchedCase(
+                .map(item -> new RawStrategyMetrics.HistoricalCase(
                         item.tradeDate().toString(),
                         item.expiryDate().toString(),
-                        item.totalEntryPremium(),
-                        item.expiryValue(),
+                        item.netEntryPremium(),
+                        item.netExpiryValue(),
                         item.selectedPnl(),
                         item.buyerPnl(),
                         item.sellerPnl()
                 ))
                 .toList();
 
-        return new StrategyAnalysisSnapshot(
+        return new RawStrategyMetrics(
                 mode,
                 orientation,
                 timeframe,
+                anchorDate.toString(),
                 selectedWindow.size(),
-                currentTotalPremium,
-                summary,
+                currentNetPremium,
+                premiumType,
+                buildSummary(selectedWindow, currentNetPremium, orientation),
                 windows,
-                expiryOutcome,
-                recommendation,
+                buildExpiryOutcome(selectedWindow, orientation),
+                bounds,
                 cases
         );
     }
 
-    private static StrategyAnalysisSnapshot.StrategyRecommendation emptyRecommendation(String mode, String orientation, String reason) {
-        return new StrategyAnalysisSnapshot.StrategyRecommendation(mode, orientation, 0, 0, 0, 0, 0, 0, reason);
-    }
-
-    private static List<StrategyAnalysisSnapshot.PremiumWindow> emptyWindows(double currentTotalPremium) {
-        List<StrategyAnalysisSnapshot.PremiumWindow> windows = new ArrayList<>();
+    private static List<RawStrategyMetrics.PremiumWindow> emptyWindows(double currentNetPremium) {
+        List<RawStrategyMetrics.PremiumWindow> windows = new ArrayList<>();
         for (String label : WINDOW_LABELS) {
-            windows.add(new StrategyAnalysisSnapshot.PremiumWindow(label, 0, 0, currentTotalPremium, 0));
+            windows.add(new RawStrategyMetrics.PremiumWindow(label, 0, 0, 0, currentNetPremium, 0));
         }
         return windows;
     }
 
-    private static StrategyAnalysisSnapshot.RecommendationSummary buildRecommendationSummary(
-            List<StrategyAnalysisSnapshot.StrategyRecommendation> rankedRecommendations
-    ) {
-        if (rankedRecommendations.isEmpty()) {
-            return new StrategyAnalysisSnapshot.RecommendationSummary(
-                    emptyRecommendation("N/A", "N/A", "No candidate strategy has usable history."),
-                    emptyRecommendation("N/A", "N/A", "No alternative strategy has usable history."),
-                    emptyRecommendation("N/A", "N/A", "No avoid signal because no candidates matched.")
-            );
-        }
-        StrategyAnalysisSnapshot.StrategyRecommendation preferred = rankedRecommendations.get(0);
-        StrategyAnalysisSnapshot.StrategyRecommendation alternative = rankedRecommendations.size() > 1
-                ? rankedRecommendations.get(1)
-                : emptyRecommendation(preferred.mode(), preferred.orientation(), "No second strategy exceeded the history threshold.");
-        StrategyAnalysisSnapshot.StrategyRecommendation avoid = rankedRecommendations.size() > 2
-                ? rankedRecommendations.get(rankedRecommendations.size() - 1)
-                : emptyRecommendation(preferred.mode(), preferred.orientation(), "No avoid signal because only one strategy matched.");
-        return new StrategyAnalysisSnapshot.RecommendationSummary(preferred, alternative, avoid);
-    }
-
-    private static StrategyAnalysisSnapshot.PremiumWindow toWindow(
+    private static RawStrategyMetrics.PremiumWindow toWindow(
             String label,
-            double currentTotalPremium,
-            List<StrategyScenario> scenarios
+            double currentNetPremium,
+            List<StrategyScenario> scenarios,
+            String orientation
     ) {
         if (scenarios.isEmpty()) {
-            return new StrategyAnalysisSnapshot.PremiumWindow(label, 0, 0, currentTotalPremium, 0);
+            return new RawStrategyMetrics.PremiumWindow(label, 0, 0, 0, currentNetPremium, 0);
         }
-        double average = scenarios.stream().mapToDouble(StrategyScenario::totalEntryPremium).average().orElse(0);
-        double median = median(scenarios.stream().map(StrategyScenario::totalEntryPremium).toList());
-        return new StrategyAnalysisSnapshot.PremiumWindow(
+        double average = scenarios.stream().mapToDouble(StrategyScenario::netEntryPremium).average().orElse(0);
+        double median = median(scenarios.stream().map(StrategyScenario::netEntryPremium).toList());
+        int percentile = percentileRank(
+                scenarios.stream().map(item -> comparablePremium(item.netEntryPremium(), orientation)).toList(),
+                comparablePremium(currentNetPremium, orientation)
+        );
+        return new RawStrategyMetrics.PremiumWindow(
                 label,
                 average,
                 median,
-                currentTotalPremium - average,
+                percentile,
+                currentNetPremium - average,
                 scenarios.size()
         );
     }
 
-    private static StrategyAnalysisSnapshot.Summary buildSummary(
+    private static RawStrategyMetrics.Summary buildSummary(
             List<StrategyScenario> scenarios,
-            double currentTotalPremium
+            double currentNetPremium,
+            String orientation
     ) {
-        double averageEntry = scenarios.stream().mapToDouble(StrategyScenario::totalEntryPremium).average().orElse(0);
-        double medianEntry = median(scenarios.stream().map(StrategyScenario::totalEntryPremium).toList());
-        double averageExpiryValue = scenarios.stream().mapToDouble(StrategyScenario::expiryValue).average().orElse(0);
+        double averageNet = scenarios.stream().mapToDouble(StrategyScenario::netEntryPremium).average().orElse(0);
+        double medianNet = median(scenarios.stream().map(StrategyScenario::netEntryPremium).toList());
+        double averageNetExpiry = scenarios.stream().mapToDouble(StrategyScenario::netExpiryValue).average().orElse(0);
         double averagePnl = scenarios.stream().mapToDouble(StrategyScenario::selectedPnl).average().orElse(0);
         double medianPnl = median(scenarios.stream().map(StrategyScenario::selectedPnl).toList());
-        double winRate = scenarios.stream().filter(item -> item.selectedPnl() > 0).count() * 100.0d / scenarios.size();
-        double bestCase = scenarios.stream().mapToDouble(StrategyScenario::selectedPnl).max().orElse(0);
-        double worstCase = scenarios.stream().mapToDouble(StrategyScenario::selectedPnl).min().orElse(0);
-        int percentile = percentileRank(scenarios.stream().map(StrategyScenario::totalEntryPremium).toList(), currentTotalPremium);
 
-        return new StrategyAnalysisSnapshot.Summary(
-                averageEntry,
-                medianEntry,
+        List<Double> wins = scenarios.stream().map(StrategyScenario::selectedPnl).filter(p -> p > 0).toList();
+        List<Double> losses = scenarios.stream().map(StrategyScenario::selectedPnl).filter(p -> p <= 0).toList();
+        double winRate = wins.size() * 100.0d / scenarios.size();
+        double avgWin = wins.isEmpty() ? 0 : wins.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double avgLoss = losses.isEmpty() ? 0 : losses.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double payoffRatio = avgLoss == 0 ? 0 : Math.abs(avgWin / avgLoss);
+        double expectancy = (winRate / 100.0d) * avgWin + ((100.0d - winRate) / 100.0d) * avgLoss;
+        int percentile = percentileRank(
+                scenarios.stream().map(item -> comparablePremium(item.netEntryPremium(), orientation)).toList(),
+                comparablePremium(currentNetPremium, orientation)
+        );
+
+        return new RawStrategyMetrics.Summary(
+                averageNet,
+                medianNet,
                 percentile,
-                currentTotalPremium - averageEntry,
-                averageExpiryValue,
+                currentNetPremium - averageNet,
+                averageNetExpiry,
                 averagePnl,
                 medianPnl,
                 winRate,
-                bestCase,
-                worstCase
+                avgWin,
+                avgLoss,
+                payoffRatio,
+                expectancy
         );
     }
 
-    private static StrategyAnalysisSnapshot.ExpiryOutcome buildExpiryOutcome(
+    private static RawStrategyMetrics.ExpiryOutcome buildExpiryOutcome(
             List<StrategyScenario> scenarios,
             String orientation
     ) {
-        double avgPayout = scenarios.stream().mapToDouble(StrategyScenario::expiryValue).average().orElse(0);
+        double avgPayout = scenarios.stream().mapToDouble(StrategyScenario::netExpiryValue).average().orElse(0);
         double avgBuyerPnl = scenarios.stream().mapToDouble(StrategyScenario::buyerPnl).average().orElse(0);
         double avgSellerPnl = scenarios.stream().mapToDouble(StrategyScenario::sellerPnl).average().orElse(0);
-        double selectedWinRate = scenarios.stream().filter(item -> item.selectedPnl() > 0).count() * 100.0d / scenarios.size();
+        double sellerWinRate = scenarios.stream().filter(item -> item.sellerPnl() > 0).count() * 100.0d / scenarios.size();
+        double buyerWinRate = scenarios.stream().filter(item -> item.buyerPnl() > 0).count() * 100.0d / scenarios.size();
         double tailLoss = percentileValue(scenarios.stream().map(StrategyScenario::selectedPnl).toList(), 10);
-        String downsideProfile = "%s-side tail %.2f".formatted(
+        double expectancy;
+        if ("SELLER".equalsIgnoreCase(orientation)) {
+            List<Double> wins = scenarios.stream().map(StrategyScenario::sellerPnl).filter(p -> p > 0).toList();
+            List<Double> losses = scenarios.stream().map(StrategyScenario::sellerPnl).filter(p -> p <= 0).toList();
+            double avgWin = wins.isEmpty() ? 0 : wins.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double avgLoss = losses.isEmpty() ? 0 : losses.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            expectancy = (sellerWinRate / 100.0d) * avgWin + ((100.0d - sellerWinRate) / 100.0d) * avgLoss;
+        } else {
+            List<Double> wins = scenarios.stream().map(StrategyScenario::buyerPnl).filter(p -> p > 0).toList();
+            List<Double> losses = scenarios.stream().map(StrategyScenario::buyerPnl).filter(p -> p <= 0).toList();
+            double avgWin = wins.isEmpty() ? 0 : wins.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double avgLoss = losses.isEmpty() ? 0 : losses.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            expectancy = (buyerWinRate / 100.0d) * avgWin + ((100.0d - buyerWinRate) / 100.0d) * avgLoss;
+        }
+        String downsideProfile = "%s-side tail %.2f pts".formatted(
                 orientation.toLowerCase(Locale.ROOT),
                 tailLoss
         );
-        return new StrategyAnalysisSnapshot.ExpiryOutcome(
+        return new RawStrategyMetrics.ExpiryOutcome(
                 avgPayout,
                 avgSellerPnl,
                 avgBuyerPnl,
-                selectedWinRate,
+                sellerWinRate,
+                buyerWinRate,
                 tailLoss,
-                downsideProfile
+                downsideProfile,
+                expectancy
         );
+    }
+
+    static RawStrategyMetrics.TheoreticalBounds computeBounds(
+            TheoreticalBoundsInput input,
+            double currentNetPremium
+    ) {
+        if (input == null) {
+            return new RawStrategyMetrics.TheoreticalBounds(null, null, "Not derivable", 0, 0);
+        }
+        double historicalBest = input.historicalBestPnl();
+        double historicalWorst = input.historicalWorstPnl();
+        return switch (input.mode()) {
+            case "SINGLE_OPTION" -> {
+                double absPremium = Math.abs(currentNetPremium);
+                if ("LONG".equalsIgnoreCase(input.firstLegSide())) {
+                    yield new RawStrategyMetrics.TheoreticalBounds(null, -absPremium, "Unlimited upside", historicalBest, historicalWorst);
+                }
+                yield new RawStrategyMetrics.TheoreticalBounds(absPremium, null, "Unlimited risk", historicalBest, historicalWorst);
+            }
+            case "LONG_STRADDLE", "LONG_STRANGLE" -> {
+                double totalDebit = Math.abs(currentNetPremium);
+                yield new RawStrategyMetrics.TheoreticalBounds(null, -totalDebit, "Unlimited upside", historicalBest, historicalWorst);
+            }
+            case "SHORT_STRADDLE", "SHORT_STRANGLE" -> {
+                double totalCredit = Math.abs(currentNetPremium);
+                yield new RawStrategyMetrics.TheoreticalBounds(totalCredit, null, "Unlimited risk", historicalBest, historicalWorst);
+            }
+            case "BULL_CALL_SPREAD", "BEAR_PUT_SPREAD" -> {
+                double spreadWidth = input.spreadWidth();
+                double netDebit = Math.abs(currentNetPremium);
+                yield new RawStrategyMetrics.TheoreticalBounds(spreadWidth - netDebit, -netDebit, "Defined risk", historicalBest, historicalWorst);
+            }
+            case "IRON_CONDOR", "IRON_BUTTERFLY" -> {
+                double netCredit = Math.abs(currentNetPremium);
+                double maxSpreadWidth = input.spreadWidth();
+                yield new RawStrategyMetrics.TheoreticalBounds(netCredit, -(maxSpreadWidth - netCredit), "Defined risk", historicalBest, historicalWorst);
+            }
+            default -> new RawStrategyMetrics.TheoreticalBounds(null, null, "Not derivable", historicalBest, historicalWorst);
+        };
     }
 
     private static List<StrategyScenario> filterRange(List<StrategyScenario> scenarios, DateRange range) {
@@ -205,7 +250,7 @@ public final class StrategyAnalysisCalculator {
                 .toList();
     }
 
-    private static DateRange resolveRange(String timeframe, LocalDate anchorDate) {
+    static DateRange resolveRange(String timeframe, LocalDate anchorDate) {
         String normalized = timeframe == null || timeframe.isBlank() ? "1Y" : timeframe.toUpperCase(Locale.ROOT);
         return switch (normalized) {
             case "5Y" -> new DateRange(anchorDate.minusYears(5).plusDays(1), anchorDate);
@@ -217,7 +262,7 @@ public final class StrategyAnalysisCalculator {
         };
     }
 
-    private static int percentileRank(List<Double> values, double value) {
+    static int percentileRank(List<Double> values, double value) {
         if (values.isEmpty()) {
             return 0;
         }
@@ -225,7 +270,7 @@ public final class StrategyAnalysisCalculator {
         return (int) Math.round(lessOrEqual * 100.0d / values.size());
     }
 
-    private static double percentileValue(List<Double> values, int percentile) {
+    static double percentileValue(List<Double> values, int percentile) {
         if (values.isEmpty()) {
             return 0;
         }
@@ -234,7 +279,7 @@ public final class StrategyAnalysisCalculator {
         return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
     }
 
-    private static double median(List<Double> values) {
+    static double median(List<Double> values) {
         if (values.isEmpty()) {
             return 0;
         }
@@ -246,17 +291,30 @@ public final class StrategyAnalysisCalculator {
         return sorted.get(mid);
     }
 
+    private static double comparablePremium(double netPremium, String orientation) {
+        return "SELLER".equalsIgnoreCase(orientation) ? -netPremium : netPremium;
+    }
+
     public record StrategyScenario(
             LocalDate tradeDate,
             LocalDate expiryDate,
-            double totalEntryPremium,
-            double expiryValue,
+            double netEntryPremium,
+            double netExpiryValue,
             double selectedPnl,
             double buyerPnl,
             double sellerPnl
     ) {
     }
 
-    private record DateRange(LocalDate from, LocalDate to) {
+    public record TheoreticalBoundsInput(
+            String mode,
+            String firstLegSide,
+            double spreadWidth,
+            double historicalBestPnl,
+            double historicalWorstPnl
+    ) {
+    }
+
+    record DateRange(LocalDate from, LocalDate to) {
     }
 }

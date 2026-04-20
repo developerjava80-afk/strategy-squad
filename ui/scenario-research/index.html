@@ -127,21 +127,53 @@
                 </div>
             </div>
 
+            <section class="result-block insight-block">
+                <div class="result-head">
+                    <span class="block-label">Strategy Insight</span>
+                </div>
+                <div class="insight-grid">
+                    <article class="insight-card">
+                        <span class="insight-label">Premium Condition</span>
+                        <strong id="insight-premium" class="insight-value insight-neutral">-</strong>
+                        <small id="insight-premium-detail" class="insight-detail">-</small>
+                    </article>
+                    <article class="insight-card">
+                        <span class="insight-label">Historical Edge</span>
+                        <strong id="insight-edge" class="insight-value insight-neutral">-</strong>
+                        <small id="insight-edge-detail" class="insight-detail">-</small>
+                    </article>
+                    <article class="insight-card">
+                        <span class="insight-label">Risk Profile</span>
+                        <strong id="insight-risk" class="insight-value insight-neutral">-</strong>
+                        <small id="insight-risk-detail" class="insight-detail">-</small>
+                    </article>
+                    <article class="insight-card verdict-card">
+                        <span class="insight-label">Verdict</span>
+                        <strong id="insight-verdict" class="verdict-badge verdict-neutral">-</strong>
+                    </article>
+                </div>
+            </section>
+
+            <details class="raw-metrics-details" open>
+                <summary class="raw-metrics-summary">Raw Metrics &amp; Detail</summary>
+
             <section class="result-block">
                 <div class="result-head">
                     <span class="block-label">1. Snapshot</span>
+                    <span class="block-note" id="snapshot-anchor-note"></span>
                 </div>
                 <div class="metric-grid snapshot-grid">
                     <article class="metric-tile">
-                        <span>Observations</span>
+                        <span>Matched instances</span>
                         <strong id="snapshot-observations">-</strong>
+                        <small class="tile-note">Historical structure matches, not trades</small>
                     </article>
                     <article class="metric-tile">
-                        <span>Avg entry</span>
+                        <span id="snapshot-average-entry-label">Avg net premium <small class="unit">pts</small></span>
                         <strong id="snapshot-average-entry">-</strong>
                     </article>
                     <article class="metric-tile">
-                        <span>Median entry</span>
+                        <span id="snapshot-median-entry-label">Median net premium <small class="unit">pts</small></span>
                         <strong id="snapshot-median-entry">-</strong>
                     </article>
                     <article class="metric-tile">
@@ -149,28 +181,40 @@
                         <strong id="snapshot-percentile">-</strong>
                     </article>
                     <article class="metric-tile emphasis">
-                        <span>Vs history</span>
+                        <span>Vs history <small class="unit">pts</small></span>
                         <strong id="snapshot-vs-history">-</strong>
+                        <small class="tile-note" id="snapshot-vs-history-note">+ve = richer, -ve = cheaper</small>
                     </article>
                     <article class="metric-tile">
-                        <span>Avg expiry value</span>
+                        <span>Avg net expiry <small class="unit">pts</small></span>
                         <strong id="snapshot-expiry-value">-</strong>
                     </article>
                     <article class="metric-tile">
                         <span>Avg P&amp;L</span>
                         <strong id="snapshot-average-pnl">-</strong>
+                        <small class="tile-note tile-raw" id="snapshot-average-pnl-raw"></small>
                     </article>
                     <article class="metric-tile">
-                        <span>Median P&amp;L</span>
+                        <span>Median P&amp;L <small class="unit">pts</small></span>
                         <strong id="snapshot-median-pnl">-</strong>
                     </article>
                     <article class="metric-tile">
-                        <span>Win rate</span>
+                        <span id="snapshot-win-rate-label">Win rate</span>
                         <strong id="snapshot-win-rate">-</strong>
                     </article>
                     <article class="metric-tile emphasis">
-                        <span>Best / worst</span>
-                        <strong id="snapshot-best-worst">-</strong>
+                        <span>Theoretical bounds <small class="unit">pts</small></span>
+                        <strong id="snapshot-bounds">-</strong>
+                        <small class="tile-note" id="snapshot-bounds-label"></small>
+                    </article>
+                    <article class="metric-tile">
+                        <span>Payoff profile</span>
+                        <strong id="snapshot-payoff-ratio">-</strong>
+                        <small class="tile-note tile-raw" id="snapshot-payoff-ratio-raw"></small>
+                    </article>
+                    <article class="metric-tile emphasis">
+                        <span>Expectancy <small class="unit">pts</small></span>
+                        <strong id="snapshot-expectancy">-</strong>
                     </article>
                 </div>
             </section>
@@ -193,9 +237,9 @@
                             <thead>
                             <tr>
                                 <th>Window</th>
-                                <th>Avg</th>
-                                <th>Median</th>
-                                <th>Vs current</th>
+                                <th id="trend-avg-header">Avg</th>
+                                <th id="trend-median-header">Median</th>
+                                <th id="trend-vs-current-header">Vs current</th>
                             </tr>
                             </thead>
                             <tbody id="timeframe-table-body">
@@ -217,31 +261,42 @@
                 </div>
                 <div class="metric-grid expiry-grid">
                     <article class="metric-tile">
-                        <span>Avg expiry payout</span>
+                        <span id="expiry-payout-label">Avg expiry payout <small class="unit">pts</small></span>
                         <strong id="expiry-payout">-</strong>
                     </article>
                     <article class="metric-tile">
-                        <span>Avg seller P&amp;L</span>
+                        <span>Avg seller P&amp;L <small class="unit">pts</small></span>
                         <strong id="expiry-seller-pnl">-</strong>
                     </article>
                     <article class="metric-tile">
-                        <span>Avg buyer P&amp;L</span>
+                        <span>Avg buyer P&amp;L <small class="unit">pts</small></span>
                         <strong id="expiry-buyer-pnl">-</strong>
                     </article>
                     <article class="metric-tile">
-                        <span>Win rate</span>
-                        <strong id="expiry-win-rate">-</strong>
+                        <span>Seller win rate</span>
+                        <strong id="expiry-seller-win-rate">-</strong>
+                    </article>
+                    <article class="metric-tile">
+                        <span>Buyer win rate</span>
+                        <strong id="expiry-buyer-win-rate">-</strong>
                     </article>
                     <article class="metric-tile emphasis">
-                        <span>Tail loss</span>
+                        <span>Tail risk</span>
                         <strong id="expiry-tail-loss">-</strong>
+                        <small class="tile-note tile-raw" id="expiry-tail-loss-raw"></small>
                     </article>
                     <article class="metric-tile emphasis">
                         <span>Downside profile</span>
                         <strong id="expiry-downside">-</strong>
                     </article>
+                    <article class="metric-tile">
+                        <span>Expectancy <small class="unit">pts</small></span>
+                        <strong id="expiry-expectancy">-</strong>
+                    </article>
                 </div>
             </section>
+
+            </details>
 
             <section class="result-block">
                 <div class="result-head">
