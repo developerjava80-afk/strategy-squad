@@ -2,6 +2,8 @@
 ### Strategy Squad · Structure-Testing Console
 ### Chief Architect Deep Review
 
+> Status note: this file is a historical audit snapshot of the structure-testing console. The current agentic theta-decay roadmap and current-vs-target implementation plan live in [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md).
+
 ---
 
 ## 1. SYSTEM UNDERSTANDING SUMMARY

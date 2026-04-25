@@ -7,6 +7,7 @@ Required pre-task review:
 - Before changing any UI metric, payoff label, recommendation wording, or report field, review [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md).
 - The contract defines the business-safe meaning of every displayed structure metric.
 - Before making code changes, also review [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md).
+- Before adding agent state, scanner candidates, risk-guard status, or profit-booking controls, review [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md).
 
 ## Screen intent
 
@@ -25,6 +26,11 @@ It is not meant to be:
 - a broker screen
 - a large research dashboard
 - a narrative-heavy analytics page
+
+Roadmap note:
+
+- The agentic live-assist loop should appear here only as compact state, latest decision, risk guard status, and report links after backend contracts are stable.
+- Scanner and decision details should stay concise on screen, with complete reasoning in reports.
 
 ## Inputs
 

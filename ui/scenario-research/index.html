@@ -4,178 +4,280 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strategy Squad | Structure Testing Console</title>
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./styles.css?v=20260424b">
 </head>
 <body>
 <div class="shell">
     <header class="topbar">
-        <div>
-            <p class="eyebrow">Strategy Squad / Algo Structure Testing</p>
-            <h1>Fast structure-testing console for historical option setups.</h1>
+        <div class="topbar-title">
+            <h1>Live Options Strategy Terminal</h1>
         </div>
-        <div class="topbar-side">
-            <p class="topbar-note">
-                Build the structure, run one historical query, and read only the compact strategy outputs that matter.
-            </p>
-            <div class="live-strip">
-                <div class="live-chip">
-                    <span class="chip-label">Live feed</span>
-                    <strong id="live-status-chip">Disabled</strong>
+        <div class="status-strip-panel">
+            <div class="status-strip">
+                <div class="status-item">
+                    <span id="market-underlying-label" class="chip-label">Underlying</span>
+                    <strong id="market-underlying-chip">-</strong>
                 </div>
-                <div class="live-chip">
-                    <span class="chip-label">Live spot</span>
-                    <strong id="live-spot-chip">-</strong>
+                <div class="status-item">
+                    <span class="chip-label">Lot Size</span>
+                    <strong id="live-lot-chip">-</strong>
                 </div>
-                <div class="live-chip">
-                    <span class="chip-label">Live structure</span>
+                <div class="status-item">
+                    <span id="live-premium-label" class="chip-label">Live Structure Premium</span>
                     <strong id="live-premium-chip">-</strong>
                 </div>
-                <div class="live-chip">
-                    <span class="chip-label">Last tick</span>
-                    <strong id="live-last-tick-chip">-</strong>
+                <div class="status-item">
+                    <span id="live-pnl-label" class="chip-label">Total PnL</span>
+                    <strong id="live-pnl-chip">-</strong>
+                </div>
+                <div class="status-item">
+                    <span class="chip-label">Confidence</span>
+                    <strong id="live-confidence-chip">-</strong>
+                </div>
+                <div class="status-item">
+                    <button id="sim-open-button" class="sim-open-button" type="button" hidden>Simulate</button>
                 </div>
             </div>
+        </div>
+        <div class="visually-hidden" aria-hidden="true">
+            <span id="live-status-chip">Disabled</span>
+            <span id="live-spot-chip">-</span>
+            <span id="live-last-tick-chip">-</span>
+        </div>
+        <div class="topbar-sim-bar" id="sim-bar" hidden>
+            <span class="sim-bar-label">&#9654; SIM</span>
+            <span id="sim-bar-date" class="sim-bar-date">-</span>
+            <span id="sim-bar-time" class="sim-bar-time">--:--:--</span>
+            <span id="sim-bar-progress" class="sim-bar-progress"></span>
+            <button id="sim-stop-button" class="sim-stop-button" type="button">Stop</button>
         </div>
     </header>
 
+    <!-- Simulation start dialog -->
+    <dialog id="sim-dialog" class="sim-dialog">
+        <form method="dialog">
+            <p class="dialog-title">Start Simulation Replay</p>
+            <div class="dialog-fields">
+                <label class="field">
+                    <span>Replay Date</span>
+                    <input type="date" id="sim-date" required>
+                </label>
+                <label class="field">
+                    <span>Speed</span>
+                    <select id="sim-speed">
+                        <option value="1">1× (real-time)</option>
+                        <option value="5">5×</option>
+                        <option value="10" selected>10×</option>
+                        <option value="30">30×</option>
+                        <option value="60">60×</option>
+                        <option value="100">100×</option>
+                    </select>
+                </label>
+            </div>
+            <div class="dialog-actions">
+                <button id="sim-confirm-btn" class="run-button" type="submit">Start</button>
+                <button id="sim-cancel-btn" class="secondary-button" type="button">Cancel</button>
+            </div>
+        </form>
+    </dialog>
+
     <main class="console">
-        <section class="panel query-panel">
-            <div class="panel-header">
-                <div>
-                    <p class="kicker">Strategy Setup</p>
-                    <h2>Dynamic structure inputs</h2>
-                </div>
-                <button id="run-analysis-button" class="run-button" type="button">Run Analysis</button>
-            </div>
-
-            <form id="scenario-form" class="query-grid">
-                <label class="field field-wide">
-                    <span>Strategy</span>
-                    <select id="strategy-mode" name="strategyMode"></select>
-                </label>
-
-                <label class="field">
-                    <span>Underlying</span>
-                    <select id="underlying" name="underlying">
-                        <option value="NIFTY">NIFTY</option>
-                        <option value="BANKNIFTY">BANKNIFTY</option>
-                    </select>
-                </label>
-
-                <label class="field">
-                    <span>Expiry type</span>
-                    <select id="expiry-type" name="expiryType">
-                        <option value="WEEKLY">Weekly</option>
-                        <option value="MONTHLY">Monthly</option>
-                    </select>
-                </label>
-
-                <label class="field">
-                    <span>DTE</span>
-                    <input id="dte" name="dte" type="number" min="0" step="1" value="4">
-                </label>
-
-                <label class="field">
-                    <span>Spot</span>
-                    <input id="spot" name="spot" type="number" min="0" step="0.05" value="22480">
-                </label>
-
-                <label class="field field-wide">
-                    <span>Timeframe</span>
-                    <select id="timeframe" name="timeframe">
-                        <option value="1M">1M</option>
-                        <option value="3M">3M</option>
-                        <option value="6M">6M</option>
-                        <option value="1Y" selected>1Y</option>
-                        <option value="2Y">2Y</option>
-                        <option value="5Y">5Y</option>
-                        <option value="CUSTOM">Custom</option>
-                    </select>
-                </label>
-
-                <label class="field custom-range" id="custom-from-field" hidden>
-                    <span>Custom from</span>
-                    <input id="custom-from" name="customFrom" type="date">
-                </label>
-
-                <label class="field custom-range" id="custom-to-field" hidden>
-                    <span>Custom to</span>
-                    <input id="custom-to" name="customTo" type="date">
-                </label>
-
-                <div class="field field-wide">
-                    <div class="legs-header">
-                        <div>
-                            <span>Structure legs</span>
-                            <p class="field-note">Each leg is part of one historical structure match.</p>
-                        </div>
-                        <button id="add-leg-button" class="secondary-button" type="button" hidden>Add Leg</button>
+        <section class="console-row console-row-main">
+            <section class="panel query-panel">
+                <div class="panel-header panel-header-tight">
+                    <div>
+                        <p class="kicker">Strategy Setup</p>
+                        <h2>Scenario Inputs</h2>
                     </div>
-                    <div id="legs-container" class="legs-stack"></div>
                 </div>
-            </form>
-        </section>
 
-        <section class="panel result-panel">
-            <div class="panel-header compact">
-                <div>
-                    <p class="kicker">Structure Output</p>
-                    <h2>Compact historical result</h2>
-                </div>
-                <div class="result-actions">
-                    <button id="download-report-button" class="secondary-button" type="button">Download Report CSV</button>
-                    <p class="status-line" id="status-line">Ready to test a strategy structure.</p>
-                </div>
-            </div>
+                <form id="scenario-form" class="query-grid">
+                    <label class="field field-full">
+                        <span>Strategy</span>
+                        <select id="strategy-mode" name="strategyMode"></select>
+                    </label>
 
-            <div class="query-chip-row">
-                <div class="query-chip">
-                    <span class="chip-label">Strategy</span>
-                    <strong id="strategy-chip">Single Option</strong>
-                </div>
-                <div class="query-chip">
-                    <span class="chip-label">Orientation</span>
-                    <strong id="orientation-chip">Buyer</strong>
-                </div>
-                <div class="query-chip">
-                    <span class="chip-label">Timeframe</span>
-                    <strong id="timeframe-chip">1Y</strong>
-                </div>
-                <div class="query-chip">
-                    <span class="chip-label">Current premium</span>
-                    <strong id="premium-chip">0.00</strong>
-                </div>
-            </div>
+                    <label class="field">
+                        <span>Underlying</span>
+                        <select id="underlying" name="underlying">
+                            <option value="NIFTY">NIFTY</option>
+                            <option value="BANKNIFTY">BANKNIFTY</option>
+                        </select>
+                    </label>
 
-            <section class="result-block insight-block">
-                <div class="result-head">
-                    <span class="block-label">Strategy Insight</span>
-                </div>
-                <div class="insight-grid">
-                    <article class="insight-card">
-                        <span class="insight-label">Premium Condition</span>
-                        <strong id="insight-premium" class="insight-value insight-neutral">-</strong>
-                        <small id="insight-premium-detail" class="insight-detail">-</small>
-                    </article>
-                    <article class="insight-card">
-                        <span class="insight-label">Historical Edge</span>
-                        <strong id="insight-edge" class="insight-value insight-neutral">-</strong>
-                        <small id="insight-edge-detail" class="insight-detail">-</small>
-                    </article>
-                    <article class="insight-card">
-                        <span class="insight-label">Risk Profile</span>
-                        <strong id="insight-risk" class="insight-value insight-neutral">-</strong>
-                        <small id="insight-risk-detail" class="insight-detail">-</small>
-                    </article>
-                    <article class="insight-card verdict-card">
-                        <span class="insight-label">Verdict</span>
-                        <strong id="insight-verdict" class="verdict-badge verdict-neutral">-</strong>
-                    </article>
-                </div>
+                    <label class="field">
+                        <span>Expiry Type</span>
+                        <select id="expiry-type" name="expiryType">
+                            <option value="WEEKLY">Weekly</option>
+                            <option value="MONTHLY">Monthly</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span>Timeframe</span>
+                        <select id="timeframe" name="timeframe">
+                            <option value="1M">1M</option>
+                            <option value="3M">3M</option>
+                            <option value="6M">6M</option>
+                            <option value="1Y" selected>1Y</option>
+                            <option value="2Y">2Y</option>
+                            <option value="5Y">5Y</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span>Qty</span>
+                        <input id="scenario-qty" name="qty" type="number" min="65" step="65" inputmode="numeric" required value="65">
+                        <small id="scenario-qty-hint" class="field-hint">Qty must be multiple of 65 (NIFTY)</small>
+                        <small id="scenario-qty-error" class="field-error" aria-live="polite"></small>
+                    </label>
+
+                    <div class="form-actions">
+                        <button id="run-analysis-button" class="run-button" type="button">Run Analysis</button>
+                        <button id="clear-data-button" class="secondary-button danger-button" type="button">Clear Data</button>
+                    </div>
+                </form>
             </section>
 
-            <details class="raw-metrics-details" open>
-                <summary class="raw-metrics-summary">Raw Metrics &amp; Detail</summary>
+            <section class="panel summary-panel">
+                <div class="panel-header panel-header-tight">
+                    <div>
+                        <p class="kicker">Live Summary</p>
+                        <h2>Tracking Snapshot</h2>
+                    </div>
+                </div>
+
+                <div class="summary-grid">
+                    <div class="summary-row">
+                        <span class="summary-label">Strategy</span>
+                        <strong id="strategy-chip">Single Option</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Orientation</span>
+                        <strong id="orientation-chip">Buyer</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Timeframe</span>
+                        <strong id="timeframe-chip">1Y</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span id="summary-premium-label" class="summary-label">Current Premium</span>
+                        <strong id="premium-chip">0.00</strong>
+                    </div>
+                    <div class="summary-row summary-row-emphasis">
+                        <span class="summary-label">Final PnL</span>
+                        <strong id="terminal-live-pnl">-</strong>
+                    </div>
+                </div>
+
+                <p class="status-line" id="status-line"></p>
+            </section>
+        </section>
+
+        <section class="console-row console-row-legs">
+            <section class="panel legs-panel">
+                <div class="panel-header panel-header-tight panel-header-spread">
+                    <h2 class="legs-table-title">STRUCTURE LEGS</h2>
+                    <button id="add-leg-button" class="secondary-button" type="button" hidden>Add Leg</button>
+                </div>
+                <div class="legs-table-wrap">
+                    <table class="structure-legs-table">
+                        <thead>
+                        <tr>
+                            <th class="check-col">Select</th>
+                            <th>Type</th>
+                            <th>Side</th>
+                            <th class="num-col">Strike</th>
+                            <th class="num-col">Expiry</th>
+                            <th class="num-col">Distance</th>
+                            <th class="num-col">Entry</th>
+                            <th id="legs-market-value-header" class="num-col">LTP</th>
+                            <th class="num-col">Orig Qty</th>
+                            <th class="num-col">Open Qty</th>
+                            <th>Delta Tracking</th>
+                            <th class="num-col">Leg Delta</th>
+                            <th class="num-col">Booked PnL</th>
+                            <th class="num-col">Live PnL</th>
+                            <th class="num-col">Total PnL</th>
+                            <th>Status</th>
+                        </tr>
+                        </thead>
+                        <tbody id="legs-container">
+                        <tr>
+                            <td colspan="16">No legs</td>
+                        </tr>
+                        </tbody>
+                        <tfoot id="legs-table-footer">
+                        <tr class="combined-delta-row">
+                            <td colspan="10" class="legs-footer-label">Combined Delta Tracking</td>
+                            <td id="combined-delta-tracking" class="legs-footer-value combined-delta-tracking-cell">--</td>
+                            <td id="combined-total-delta" class="legs-footer-value">--</td>
+                            <td colspan="4" class="legs-footer-value"></td>
+                        </tr>
+                        <tr>
+                            <td colspan="10" class="legs-footer-label">Open Position Totals</td>
+                            <td id="legs-total-premium" class="legs-footer-value">-</td>
+                            <td id="legs-total-delta" class="legs-footer-value">-</td>
+                            <td id="legs-total-mtm" class="legs-footer-value">-</td>
+                            <td colspan="3" class="legs-footer-value"></td>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="legs-meta-strip">
+                    <div class="baseline-stamp" id="baseline-stamp">Baseline: Not captured</div>
+                    <div class="live-refresh-stamp" id="live-refresh-stamp">Live refresh: --</div>
+                </div>
+                <div class="position-control-bar">
+                    <div class="position-pnl-strip">
+                        <div class="position-pnl-item">
+                            <span>Booked PnL</span>
+                            <strong id="positions-booked-pnl">-</strong>
+                        </div>
+                        <div class="position-pnl-item">
+                            <span>Live PnL</span>
+                            <strong id="positions-live-pnl">-</strong>
+                        </div>
+                        <div class="position-pnl-item">
+                            <span>Total PnL</span>
+                            <strong id="positions-total-pnl">-</strong>
+                        </div>
+                    </div>
+                    <div class="position-action-group">
+                        <button id="exit-selected-button" class="secondary-button" type="button">Exit Selected</button>
+                        <button id="exit-all-button" class="run-button" type="button">Exit All</button>
+                    </div>
+                </div>
+                <div id="delta-adjustment-message" class="adjustment-message" hidden></div>
+                <div class="adjustment-log-panel">
+                    <div class="adjustment-log-header">
+                        <h3>Position Audit Log</h3>
+                    </div>
+                    <p id="delta-adjustment-log-empty" class="adjustment-log-empty">No adjustments or exits yet.</p>
+                    <div class="adjustment-log-wrap">
+                        <table class="adjustment-log-table">
+                            <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Action</th>
+                                <th>Leg</th>
+                                <th>Qty</th>
+                                <th>Booked PnL</th>
+                                <th>Delta</th>
+                                <th>Volume</th>
+                                <th>Reason</th>
+                            </tr>
+                            </thead>
+                            <tbody id="delta-adjustment-log-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </section>
+
+        <section class="panel result-panel report-only">
+            <details class="raw-metrics-details report-only">
+                <summary class="raw-metrics-summary">Report source analytics</summary>
 
             <section class="result-block">
                 <div class="result-head">
@@ -200,7 +302,7 @@
                         <span>Current percentile</span>
                         <strong id="snapshot-percentile">-</strong>
                     </article>
-                    <article class="metric-tile emphasis">
+                    <article class="metric-tile">
                         <span>Vs history <small class="unit">pts</small></span>
                         <strong id="snapshot-vs-history">-</strong>
                         <small class="tile-note" id="snapshot-vs-history-note">+ve = richer, -ve = cheaper</small>
@@ -316,8 +418,6 @@
                 </div>
             </section>
 
-            </details>
-
             <section class="result-block">
                 <div class="result-head">
                     <span class="block-label">4. Recommendation</span>
@@ -340,10 +440,64 @@
                     </article>
                 </div>
             </section>
+            </details>
         </section>
     </main>
+
+    <div class="page-footer-action">
+        <button id="download-report-button" class="run-button" type="button">Generate PDF Report</button>
+    </div>
 </div>
 
-<script src="./app.js"></script>
+<dialog id="add-leg-dialog" class="add-leg-dialog">
+    <form id="add-leg-form" method="dialog">
+        <h3 class="dialog-title">Add Leg</h3>
+        <div class="dialog-fields">
+            <label class="field">
+                <span>Underlying</span>
+                <select id="alg-underlying">
+                    <option value="NIFTY">NIFTY</option>
+                    <option value="BANKNIFTY">BANKNIFTY</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Option Type</span>
+                <select id="alg-option-type">
+                    <option value="CE">CE (Call)</option>
+                    <option value="PE">PE (Put)</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Side</span>
+                <select id="alg-side">
+                    <option value="LONG">Buy (Long)</option>
+                    <option value="SHORT">Sell (Short)</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Strike Price</span>
+                <input id="alg-strike" type="number" min="0" step="50" value="25000">
+            </label>
+            <label class="field">
+                <span>Expiry</span>
+                <input id="alg-expiry" type="date">
+            </label>
+            <label class="field">
+                <span>Entry Price</span>
+                <input id="alg-entry-price" type="number" min="0" step="0.05" value="40">
+            </label>
+            <label class="field">
+                <span>Label (optional)</span>
+                <input id="alg-label" type="text" placeholder="e.g. Manual leg 1">
+            </label>
+        </div>
+        <div class="dialog-actions">
+            <button type="submit" class="run-button" id="alg-confirm-btn">Add Leg</button>
+            <button type="button" class="secondary-button" id="alg-cancel-btn">Cancel</button>
+        </div>
+    </form>
+</dialog>
+
+<script src="./app.js?v=20260422a"></script>
 </body>
 </html>

@@ -20,6 +20,7 @@ Before making any code change that touches:
 - historical matching semantics
 - report labeling
 - risk/confidence logic
+- scanner, signal, decision-agent, profit-booking, risk-guard, or orchestrator behavior
 - UI wording for structure outputs
 
 the implementer must review this document and [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md) for business and domain context.
@@ -47,6 +48,7 @@ If any answer is `no`, the implementation is incomplete.
 - Structure-based options evaluation system
 - Deterministic research workstation
 - Canonical-data-driven
+- Agentic live-assist intelligence system, after the live decision loop is implemented
 
 ## 1.2 What this system is not
 
@@ -54,6 +56,7 @@ If any answer is `no`, the implementation is incomplete.
 - Not a calculator
 - Not a black-box optimizer
 - Not a sentiment/news-driven system
+- Not an automatic broker order-execution system unless a separate approved execution design exists
 
 ## 1.3 Core question
 

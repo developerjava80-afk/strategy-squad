@@ -80,6 +80,7 @@ public class StrategyAnalysisService {
             RawStrategyMetrics raw = buildRawMetrics(definition, timeframe, customFrom, customTo, context);
             EconomicMetrics.RecommendationContext recommendation = buildRecommendationContext(
                     definition,
+                raw,
                     timeframe,
                     customFrom,
                     customTo,
@@ -120,6 +121,7 @@ public class StrategyAnalysisService {
 
     private EconomicMetrics.RecommendationContext buildRecommendationContext(
             StrategyStructureDefinition selectedDefinition,
+            RawStrategyMetrics selectedRaw,
             String timeframe,
             LocalDate customFrom,
             LocalDate customTo,
@@ -127,6 +129,11 @@ public class StrategyAnalysisService {
     ) throws SQLException {
         List<StrategyStructureDefinition> candidates = candidateDefinitions(selectedDefinition);
         List<CandidateScore> scored = new ArrayList<>();
+        EconomicMetrics selectedEconomic = EconomicMetricsTransformer.transform(
+                selectedRaw,
+                EconomicMetricsTransformer.emptyRecommendationContext()
+        );
+        int excludedInvalidCandidates = 0;
         for (StrategyStructureDefinition candidate : candidates) {
             RawStrategyMetrics rawCandidate = buildRawMetrics(candidate, timeframe, customFrom, customTo, context);
             if (rawCandidate.observationCount() == 0) {
@@ -146,6 +153,10 @@ public class StrategyAnalysisService {
                     + (sampleSupport * 0.18d)
                     + ((1.0d - downsidePenalty) * 0.16d)
                     - lowSamplePenalty;
+            if (!isRecommendationCandidateValid(economicCandidate, score)) {
+                excludedInvalidCandidates++;
+                continue;
+            }
             scored.add(new CandidateScore(economicCandidate, score));
         }
         if (scored.isEmpty()) {
@@ -154,37 +165,40 @@ public class StrategyAnalysisService {
 
         List<EconomicMetrics.RecommendationCandidate> ranked = scored.stream()
                 .sorted(Comparator.comparingDouble(CandidateScore::score).reversed())
-                .map(item -> new EconomicMetrics.RecommendationCandidate(
-                        item.candidate().mode(),
-                        item.candidate().orientation(),
-                        item.candidate().title(),
-                        item.score(),
-                        item.candidate().observationCount(),
-                        item.candidate().lowSampleWarning(),
-                        item.candidate().rawPricePercentile(),
-                        item.candidate().economicPercentile(),
-                        item.candidate().premiumVsAveragePoints(),
-                        item.candidate().averagePnlPoints(),
-                        item.candidate().winRatePct(),
-                        item.candidate().downsideSeverityPoints(),
-                        recommendationVerdict(item.candidate(), item.score()),
-                        recommendationReason(item.candidate(), item.score())
-                ))
+            .map(item -> {
+                String rankedVerdict = recommendationVerdict(item.candidate(), item.score());
+                return new EconomicMetrics.RecommendationCandidate(
+                    item.candidate().mode(),
+                    item.candidate().orientation(),
+                    item.candidate().title(),
+                    item.score(),
+                    item.candidate().observationCount(),
+                    item.candidate().lowSampleWarning(),
+                    item.candidate().rawPricePercentile(),
+                    item.candidate().economicPercentile(),
+                    item.candidate().premiumVsAveragePoints(),
+                    item.candidate().averagePnlPoints(),
+                    item.candidate().winRatePct(),
+                    item.candidate().downsideSeverityPoints(),
+                    rankedVerdict,
+                    recommendationReason(item.candidate(), item.score(), selectedEconomic, rankedVerdict)
+                );
+            })
                 .toList();
 
         EconomicMetrics.RecommendationCandidate preferred = ranked.get(0);
         EconomicMetrics.RecommendationCandidate alternative = ranked.size() > 1
-                ? ranked.get(1)
-                : fallbackCandidate(preferred, "No second strategy cleared the confidence bar.");
+                    ? ranked.get(1)
+                    : null;
         EconomicMetrics.RecommendationCandidate avoid = ranked.size() > 2
                 ? ranked.get(ranked.size() - 1)
-                : fallbackCandidate(preferred, "No clear avoid candidate because only one strategy matched.");
+                    : null;
 
         return new EconomicMetrics.RecommendationContext(
                 preferred,
                 alternative,
                 avoid,
-                "Recommendations are deterministic rankings over a controlled candidate set, not a full optimizer."
+                    buildRecommendationContextNote(excludedInvalidCandidates, ranked.size(), alternative != null, avoid != null)
         );
     }
 
@@ -201,38 +215,82 @@ public class StrategyAnalysisService {
         return "Alternative candidate";
     }
 
-    private String recommendationReason(EconomicMetrics.RecommendationCandidate candidate, double score) {
-        return "%s. Economic percentile %dth, avg pnl %.2f pts, win rate %.1f%%, downside %.2f pts, score %.2f.%s".formatted(
-                candidate.verdict(),
+    private String recommendationReason(
+            EconomicMetrics.RecommendationCandidate candidate,
+            double score,
+            EconomicMetrics selectedEconomic,
+            String rankedVerdict
+    ) {
+        String candidateOrientation = titleCase(candidate.orientation());
+        String selectedOrientation = titleCase(selectedEconomic.orientation());
+        String premiumContext = selectedEconomic.premium().priceConditionLabel();
+        String attractiveness = selectedEconomic.premium().attractivenessLabel();
+        String slotSignal = score >= 0.70d
+                ? "highest-composite profile"
+                : score <= 0.35d
+                ? "weakest-composite profile"
+                : "mid-ranked composite profile";
+        return "%s; %s under %s (%s). Candidate=%s, economic percentile %dth, avg pnl %.2f pts, win rate %.1f%%, downside %.2f pts, score %.2f.%s".formatted(
+            rankedVerdict,
+                selectedOrientation,
+                premiumContext,
+                attractiveness,
+                slotSignal,
                 candidate.economicPercentile(),
                 candidate.averagePnlPoints(),
                 candidate.winRatePct(),
                 candidate.downsideSeverityPoints(),
                 score,
-                candidate.lowSampleWarning().isBlank() ? "" : " " + candidate.lowSampleWarning()
+                candidate.lowSampleWarning().isBlank()
+                        ? ""
+                        : " " + candidateOrientation + " warning: " + candidate.lowSampleWarning()
         );
     }
 
-    private EconomicMetrics.RecommendationCandidate fallbackCandidate(
-            EconomicMetrics.RecommendationCandidate candidate,
-            String reason
+    private static boolean isRecommendationCandidateValid(EconomicMetrics.RecommendationCandidate candidate, double score) {
+        if (candidate.observationCount() <= 0) {
+            return false;
+        }
+        if (!Double.isFinite(score)) {
+            return false;
+        }
+        if (!Double.isFinite(candidate.averagePnlPoints()) || Math.abs(candidate.averagePnlPoints()) < 0.0001d) {
+            return false;
+        }
+        if (!Double.isFinite(candidate.winRatePct()) || candidate.winRatePct() <= 0.0d || candidate.winRatePct() > 100.0d) {
+            return false;
+        }
+        if (!Double.isFinite(candidate.downsideSeverityPoints()) || candidate.downsideSeverityPoints() <= 0.0d) {
+            return false;
+        }
+        return candidate.economicPercentile() > 0 && candidate.rawPricePercentile() > 0;
+    }
+
+    private static String buildRecommendationContextNote(
+            int excludedInvalidCandidates,
+            int rankedCount,
+            boolean hasAlternative,
+            boolean hasAvoid
     ) {
-        return new EconomicMetrics.RecommendationCandidate(
-                candidate.mode(),
-                candidate.orientation(),
-                candidate.title(),
-                candidate.score(),
-                candidate.observationCount(),
-                candidate.lowSampleWarning(),
-                candidate.rawPricePercentile(),
-                candidate.economicPercentile(),
-                candidate.premiumVsAveragePoints(),
-                candidate.averagePnlPoints(),
-                candidate.winRatePct(),
-                candidate.downsideSeverityPoints(),
-                candidate.verdict(),
-                reason
+        StringBuilder note = new StringBuilder(
+                "Recommendations are deterministic rankings over a controlled candidate set, not a full optimizer."
         );
+        if (excludedInvalidCandidates > 0) {
+            note.append(" ")
+                    .append(excludedInvalidCandidates)
+                    .append(" candidate(s) were excluded because key metrics were missing or defaulted.");
+        }
+        if (!hasAlternative || !hasAvoid) {
+            note.append(" Ranking depth is limited to ")
+                    .append(rankedCount)
+                    .append(" validated candidate(s), so unvalidated slots are omitted.");
+        }
+        return note.toString();
+    }
+
+    private static String titleCase(String value) {
+        String lower = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        return lower.isEmpty() ? "" : Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
     }
 
     private record CandidateScore(EconomicMetrics.RecommendationCandidate candidate, double score) {
@@ -313,15 +371,18 @@ public class StrategyAnalysisService {
             double netEntryPremium = 0;
             double netExpiryValue = 0;
             double selectedPnl = 0;
-            for (Map<String, AggregatedLegPoint> legMap : alignedMaps) {
+            for (int index = 0; index < alignedMaps.size(); index++) {
+                Map<String, AggregatedLegPoint> legMap = alignedMaps.get(index);
                 AggregatedLegPoint point = legMap.get(key);
+                StrategyStructureDefinition.StrategyLeg leg = definition.legs().get(index);
+                int lotCount = definition.lotCount(leg);
                 double sign = isShort(point.side()) ? -1.0 : 1.0;
-                netEntryPremium += sign * point.entryAverage();
-                netExpiryValue += sign * point.expiryAverage();
+                netEntryPremium += sign * point.entryAverage() * lotCount;
+                netExpiryValue += sign * point.expiryAverage() * lotCount;
                 double legPnl = isShort(point.side())
                         ? point.entryAverage() - point.expiryAverage()
                         : point.expiryAverage() - point.entryAverage();
-                selectedPnl += legPnl;
+                selectedPnl += legPnl * lotCount;
             }
             LocalDate tradeDate = alignedMaps.get(0).get(key).tradeDate();
             LocalDate expiryDate = alignedMaps.get(0).get(key).expiryDate();
@@ -404,7 +465,7 @@ public class StrategyAnalysisService {
         double net = 0;
         for (StrategyStructureDefinition.StrategyLeg leg : definition.legs()) {
             double sign = isShort(leg.side()) ? -1.0 : 1.0;
-            net += sign * leg.entryPrice().doubleValue();
+            net += sign * leg.entryPrice().doubleValue() * definition.lotCount(leg);
         }
         return net;
     }
@@ -426,6 +487,10 @@ public class StrategyAnalysisService {
                 .map(StrategyStructureDefinition.StrategyLeg::strike)
                 .sorted()
                 .toList();
+        int maxLotCount = definition.legs().stream()
+                .mapToInt(definition::lotCount)
+                .max()
+                .orElse(1);
         if (strikes.size() < 2) {
             return 0;
         }
@@ -433,10 +498,10 @@ public class StrategyAnalysisService {
             if (strikes.size() == 4) {
                 double putSpread = strikes.get(1).subtract(strikes.get(0)).doubleValue();
                 double callSpread = strikes.get(3).subtract(strikes.get(2)).doubleValue();
-                return Math.max(putSpread, callSpread);
+                return Math.max(putSpread, callSpread) * maxLotCount;
             }
         }
-        return strikes.get(strikes.size() - 1).subtract(strikes.get(0)).doubleValue();
+        return strikes.get(strikes.size() - 1).subtract(strikes.get(0)).doubleValue() * maxLotCount;
     }
 
     private List<StrategyStructureDefinition> candidateDefinitions(StrategyStructureDefinition selected) {
@@ -460,66 +525,66 @@ public class StrategyAnalysisService {
         definitions.add(selected);
         definitions.add(new StrategyStructureDefinition(
                 "SINGLE_OPTION", "BUYER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
-                List.of(new StrategyStructureDefinition.StrategyLeg("Single leg", defaultOptionType(selected), "LONG", firstStrike, defaultEntryPrice(selected, 0)))
+                List.of(new StrategyStructureDefinition.StrategyLeg("Single leg", defaultOptionType(selected), "LONG", firstStrike, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)))
         ));
         definitions.add(new StrategyStructureDefinition(
                 "LONG_STRADDLE", "BUYER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("ATM call", "CE", "LONG", atmStrike, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("ATM put", "PE", "LONG", atmStrike, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("ATM call", "CE", "LONG", atmStrike, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("ATM put", "PE", "LONG", atmStrike, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "SHORT_STRADDLE", "SELLER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("ATM call", "CE", "SHORT", atmStrike, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("ATM put", "PE", "SHORT", atmStrike, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("ATM call", "CE", "SHORT", atmStrike, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("ATM put", "PE", "SHORT", atmStrike, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "LONG_STRANGLE", "BUYER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("OTM put", "PE", "LONG", strangleLowerWing, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("OTM call", "CE", "LONG", strangleUpperWing, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("OTM put", "PE", "LONG", strangleLowerWing, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("OTM call", "CE", "LONG", strangleUpperWing, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "SHORT_STRANGLE", "SELLER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("OTM put", "PE", "SHORT", strangleLowerWing, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("OTM call", "CE", "SHORT", strangleUpperWing, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("OTM put", "PE", "SHORT", strangleLowerWing, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("OTM call", "CE", "SHORT", strangleUpperWing, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "BULL_CALL_SPREAD", "BUYER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("Long call", "CE", "LONG", atmStrike, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", upperWing, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("Long call", "CE", "LONG", atmStrike, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", upperWing, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "BEAR_PUT_SPREAD", "BUYER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("Long put", "PE", "LONG", atmStrike, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", lowerWing, defaultEntryPrice(selected, 1))
+                        new StrategyStructureDefinition.StrategyLeg("Long put", "PE", "LONG", atmStrike, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", lowerWing, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "IRON_CONDOR", "SELLER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("Long put wing", "PE", "LONG", fartherLowerWing, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", lowerWing, defaultEntryPrice(selected, 1)),
-                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", upperWing, defaultEntryPrice(selected, 2)),
-                        new StrategyStructureDefinition.StrategyLeg("Long call wing", "CE", "LONG", fartherUpperWing, defaultEntryPrice(selected, 3))
+                        new StrategyStructureDefinition.StrategyLeg("Long put wing", "PE", "LONG", fartherLowerWing, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", lowerWing, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1)),
+                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", upperWing, defaultEntryPrice(selected, 2), defaultQuantity(selected, 2)),
+                        new StrategyStructureDefinition.StrategyLeg("Long call wing", "CE", "LONG", fartherUpperWing, defaultEntryPrice(selected, 3), defaultQuantity(selected, 3))
                 )
         ));
         definitions.add(new StrategyStructureDefinition(
                 "IRON_BUTTERFLY", "SELLER", selected.underlying(), selected.expiryType(), selected.dte(), selected.spot(),
                 List.of(
-                        new StrategyStructureDefinition.StrategyLeg("Long put wing", "PE", "LONG", lowerWing, defaultEntryPrice(selected, 0)),
-                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", atmStrike, defaultEntryPrice(selected, 1)),
-                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", atmStrike, defaultEntryPrice(selected, 2)),
-                        new StrategyStructureDefinition.StrategyLeg("Long call wing", "CE", "LONG", upperWing, defaultEntryPrice(selected, 3))
+                        new StrategyStructureDefinition.StrategyLeg("Long put wing", "PE", "LONG", lowerWing, defaultEntryPrice(selected, 0), defaultQuantity(selected, 0)),
+                        new StrategyStructureDefinition.StrategyLeg("Short put", "PE", "SHORT", atmStrike, defaultEntryPrice(selected, 1), defaultQuantity(selected, 1)),
+                        new StrategyStructureDefinition.StrategyLeg("Short call", "CE", "SHORT", atmStrike, defaultEntryPrice(selected, 2), defaultQuantity(selected, 2)),
+                        new StrategyStructureDefinition.StrategyLeg("Long call wing", "CE", "LONG", upperWing, defaultEntryPrice(selected, 3), defaultQuantity(selected, 3))
                 )
         ));
         return definitions.stream()
@@ -546,6 +611,16 @@ public class StrategyAnalysisService {
             return definition.legs().get(index).entryPrice();
         }
         return definition.legs().get(definition.legs().size() - 1).entryPrice();
+    }
+
+    private static Integer defaultQuantity(StrategyStructureDefinition definition, int index) {
+        if (definition.legs().isEmpty()) {
+            return null;
+        }
+        if (index < definition.legs().size()) {
+            return definition.legs().get(index).quantity();
+        }
+        return definition.legs().get(definition.legs().size() - 1).quantity();
     }
 
     private static BigDecimal roundToBucket(BigDecimal value, BigDecimal bucket) {

@@ -14,6 +14,22 @@ Current verified state:
 - Historical raw load now supports the downloaded NSE UDiFF CSV layout.
 - Non-live refresh rebuilds `options_enriched`, `options_15m_buckets`, `options_context_buckets`, and `pcr_historical` from the raw tables.
 - Instrument IDs are human-readable and deterministic so they can be queried directly in analytics and joins.
+- The scenario-research workstation supports live and simulation structure runs with persisted position sessions.
+- The live adjustment engine now supports lot-based `ADD` / `REDUCE` rebalancing with cooldown, churn guard, and audit logging.
+- Completed live and simulation runs can write markdown execution reports under `docs/reports/`.
+
+Roadmap status:
+- The next product phase is the agentic theta-decay decision loop for NIFTY and BANKNIFTY weekly options.
+- The current codebase has the historical, live overlay, empirical delta, basic theta residual, position-session, simulation, and reporting foundations.
+- The missing layer is the explicit scanner, reusable signal engine, decision agent, position builder, profit-booking agent, global risk guard, and market-day orchestrator.
+- The first implementation target is deterministic simulation and live-assist decisions with full auditability. Broker order execution is not part of the next phase unless approved separately.
+
+Key functional docs:
+
+- [docs/agentic-live-trading-decision-loop.md](docs/agentic-live-trading-decision-loop.md)
+- [docs/scenario-research-workstation.md](docs/scenario-research-workstation.md)
+- [docs/live-kite-overlay.md](docs/live-kite-overlay.md)
+- [docs/reports/sample-strategy-run-report.md](docs/reports/sample-strategy-run-report.md)
 
 ---
 

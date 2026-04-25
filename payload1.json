@@ -1,0 +1,1 @@
+{"ticker": "SPY", "strategy": "Iron Condor", "criteria": {"volatility": "high", "days_to_expiration": 30}}  

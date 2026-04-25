@@ -1,0 +1,1 @@
+{"ticker": "AAPL", "strategy": "Credit Spread", "criteria": {"volatility": "low", "days_to_expiration": 45}} 

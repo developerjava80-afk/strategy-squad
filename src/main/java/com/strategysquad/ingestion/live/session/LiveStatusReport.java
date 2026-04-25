@@ -1,5 +1,7 @@
 package com.strategysquad.ingestion.live.session;
 
+import com.strategysquad.research.LiveMarketReadinessService;
+
 import java.time.Instant;
 
 /**
@@ -11,10 +13,14 @@ public record LiveStatusReport(
         Instant lastTickTs,
         long secondsSinceLastTick,
         int subscribedInstruments,
-        long ticksProcessed
+        long ticksProcessed,
+        LiveMarketReadinessService.LiveMarketReadinessSnapshot dataReadiness
 ) {
 
-    public static LiveStatusReport from(LiveSessionState state) {
+    public static LiveStatusReport from(
+            LiveSessionState state,
+            LiveMarketReadinessService.LiveMarketReadinessSnapshot dataReadiness
+    ) {
         Instant lastTick = state.getLastTickTs();
         long secondsAgo = lastTick == null ? -1
                 : java.time.Duration.between(lastTick, Instant.now()).toSeconds();
@@ -24,12 +30,13 @@ public record LiveStatusReport(
                 lastTick,
                 secondsAgo,
                 state.getSubscribedInstruments(),
-                state.getTicksProcessed()
+                state.getTicksProcessed(),
+                dataReadiness
         );
     }
 
     /** Returns a report for when live mode is not initialized. */
     public static LiveStatusReport disabled() {
-        return new LiveStatusReport("DISABLED", "Live mode not enabled", null, -1, 0, 0);
+        return new LiveStatusReport("DISABLED", "Live mode not enabled", null, -1, 0, 0, null);
     }
 }

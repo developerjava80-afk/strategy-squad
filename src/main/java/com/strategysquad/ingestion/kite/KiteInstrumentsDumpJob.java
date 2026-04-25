@@ -42,6 +42,22 @@ public final class KiteInstrumentsDumpJob {
                     + "  is_active, expiry_type, created_at, updated_at)"
                     + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+    private static final String UPDATE_INSTRUMENT_SQL =
+            "UPDATE instrument_master"
+                    + " SET underlying = ?,"
+                    + "     symbol = ?,"
+                    + "     expiry_date = ?,"
+                    + "     strike = ?,"
+                    + "     option_type = ?,"
+                    + "     lot_size = ?,"
+                    + "     tick_size = ?,"
+                    + "     exchange_token = ?,"
+                    + "     trading_symbol = ?,"
+                    + "     is_active = ?,"
+                    + "     expiry_type = ?,"
+                    + "     updated_at = ?"
+                    + " WHERE instrument_id = ?";
+
     private static final String SELECT_EXISTING_SQL =
             "SELECT instrument_id FROM instrument_master";
 
@@ -149,36 +165,83 @@ public final class KiteInstrumentsDumpJob {
         Set<String> existing = loadExistingInstrumentIds(connection);
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
         int inserted = 0;
+        int updated = 0;
 
-        try (PreparedStatement stmt = connection.prepareStatement(INSERT_INSTRUMENT_SQL)) {
+        try (PreparedStatement insertStmt = connection.prepareStatement(INSERT_INSTRUMENT_SQL);
+             PreparedStatement updateStmt = connection.prepareStatement(UPDATE_INSTRUMENT_SQL)) {
             for (KiteInstrumentRecord rec : filtered) {
                 String instrumentId = tokenToId.get(rec.instrumentToken());
-                if (existing.contains(instrumentId)) continue;
-
                 LocalDate expiry = rec.expiry();
-                stmt.setString(1, instrumentId);
-                stmt.setString(2, rec.name());
-                stmt.setString(3, rec.name());
-                stmt.setTimestamp(4, Timestamp.valueOf(expiry.atStartOfDay()));
-                stmt.setDouble(5, rec.strike().doubleValue());
-                stmt.setString(6, rec.instrumentType());
-                stmt.setInt(7, rec.lotSize());
-                stmt.setDouble(8, rec.tickSize());
-                stmt.setString(9, String.valueOf(rec.instrumentToken()));
-                stmt.setString(10, rec.tradingSymbol());
-                stmt.setBoolean(11, !expiry.isBefore(referenceDate));
-                stmt.setString(12, deriveExpiryType(expiry));
-                stmt.setTimestamp(13, now);
-                stmt.setTimestamp(14, now);
-                stmt.addBatch();
+                if (existing.contains(instrumentId)) {
+                    bindUpdate(updateStmt, instrumentId, rec, expiry, referenceDate, now);
+                    updateStmt.addBatch();
+                    updated++;
+                    continue;
+                }
+
+                bindInsert(insertStmt, instrumentId, rec, expiry, referenceDate, now);
+                insertStmt.addBatch();
                 existing.add(instrumentId);
                 inserted++;
             }
             if (inserted > 0) {
-                stmt.executeBatch();
+                insertStmt.executeBatch();
+            }
+            if (updated > 0) {
+                updateStmt.executeBatch();
             }
         }
+        if (updated > 0) {
+            System.out.printf("[kite-dump] Refreshed %d existing instrument_master rows with current Kite contract metadata%n", updated);
+        }
         return inserted;
+    }
+
+    private static void bindInsert(
+            PreparedStatement stmt,
+            String instrumentId,
+            KiteInstrumentRecord rec,
+            LocalDate expiry,
+            LocalDate referenceDate,
+            Timestamp now
+    ) throws SQLException {
+        stmt.setString(1, instrumentId);
+        stmt.setString(2, rec.name());
+        stmt.setString(3, rec.name());
+        stmt.setTimestamp(4, Timestamp.valueOf(expiry.atStartOfDay()));
+        stmt.setDouble(5, rec.strike().doubleValue());
+        stmt.setString(6, rec.instrumentType());
+        stmt.setInt(7, rec.lotSize());
+        stmt.setDouble(8, rec.tickSize());
+        stmt.setString(9, String.valueOf(rec.instrumentToken()));
+        stmt.setString(10, rec.tradingSymbol());
+        stmt.setBoolean(11, !expiry.isBefore(referenceDate));
+        stmt.setString(12, deriveExpiryType(expiry));
+        stmt.setTimestamp(13, now);
+        stmt.setTimestamp(14, now);
+    }
+
+    private static void bindUpdate(
+            PreparedStatement stmt,
+            String instrumentId,
+            KiteInstrumentRecord rec,
+            LocalDate expiry,
+            LocalDate referenceDate,
+            Timestamp now
+    ) throws SQLException {
+        stmt.setString(1, rec.name());
+        stmt.setString(2, rec.name());
+        stmt.setTimestamp(3, Timestamp.valueOf(expiry.atStartOfDay()));
+        stmt.setDouble(4, rec.strike().doubleValue());
+        stmt.setString(5, rec.instrumentType());
+        stmt.setInt(6, rec.lotSize());
+        stmt.setDouble(7, rec.tickSize());
+        stmt.setString(8, String.valueOf(rec.instrumentToken()));
+        stmt.setString(9, rec.tradingSymbol());
+        stmt.setBoolean(10, !expiry.isBefore(referenceDate));
+        stmt.setString(11, deriveExpiryType(expiry));
+        stmt.setTimestamp(12, now);
+        stmt.setString(13, instrumentId);
     }
 
     private Set<String> loadExistingInstrumentIds(Connection connection) throws SQLException {

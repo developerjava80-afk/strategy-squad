@@ -11,6 +11,10 @@ Before making any code change involving:
 - user-facing metrics
 - payoff interpretation
 - report exports
+- live delta-adjustment behavior
+- simulation replay behavior
+- position-session persistence or audit logging
+- scanner, signal engine, decision-agent, profit-booking, risk-guard, or orchestrator behavior
 - confidence or evidence wording
 - NIFTY/BANKNIFTY expiry, lot-size, or moneyness semantics
 
@@ -19,6 +23,8 @@ review these documents first:
 1. [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md)
 2. [scenario-research-workstation.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/scenario-research-workstation.md)
 3. [ui-guidance-algo-testing-console.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/ui-guidance-algo-testing-console.md)
+4. [live-kite-overlay.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/live-kite-overlay.md)
+5. [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md)
 
 ## Required coding behavior
 
@@ -27,6 +33,11 @@ review these documents first:
 - Preserve canonical historical truth boundaries.
 - Prefer suppressing or relabeling unsafe metrics over showing ambiguous values.
 - Do not describe the recommendation layer as an optimizer.
+- Keep report generation separate from adjustment decision behavior.
+- Treat simulation as a consumer of the live-market services, not a separate analytics fork.
+- Preserve booked PnL, manual exit behavior, and persisted audit semantics when changing live adjustment flows.
+- Treat the agentic roadmap as live-assist and simulation-first. Do not add broker order execution without a separate approved design.
+- Route every scanner, decision, adjustment, profit-booking, or risk-guard action through explicit reason codes and reconstructable audit state.
 
 ## Quick pre-change checklist
 

@@ -3,8 +3,10 @@ package com.strategysquad.ingestion.kite;
 import com.strategysquad.ingestion.live.session.Live15mAggregator;
 import com.strategysquad.ingestion.live.session.Live15mWriter;
 import com.strategysquad.ingestion.live.session.LiveSessionState;
+import com.strategysquad.research.HistoricalReplayService;
 import com.strategysquad.research.LiveMarketService;
 import com.strategysquad.research.ResearchConsoleServer;
+import com.strategysquad.research.SimulationClock;
 import com.strategysquad.research.StrategyAnalysisService;
 import com.sun.net.httpserver.HttpServer;
 
@@ -55,20 +57,29 @@ public final class KiteLiveConsoleMain {
                 : config.jdbcUrl();
         int port = config.consolePort();
         new LiveSchemaBootstrapper(jdbcUrl).ensureLiveTables();
+        KiteDailyTokenStore tokenStore = new KiteDailyTokenStore(localTokenFile);
+        KiteOptionCloseQuoteService optionCloseQuoteService = new KiteOptionCloseQuoteService(
+            config.apiKey(),
+            tokenStore
+        );
 
         LiveSessionState sessionState = new LiveSessionState();
         Live15mAggregator live15mAggregator = new Live15mAggregator(new Live15mWriter());
         StrategyAnalysisService strategyAnalysisService = new StrategyAnalysisService(jdbcUrl);
+        SimulationClock simulationClock = new SimulationClock();
         LiveMarketService liveMarketService = new LiveMarketService(
                 jdbcUrl,
                 sessionState,
                 live15mAggregator,
-                strategyAnalysisService
+            optionCloseQuoteService,
+                strategyAnalysisService,
+                simulationClock
         );
+        HistoricalReplayService replayService = new HistoricalReplayService(jdbcUrl, sessionState, simulationClock);
 
         KiteLiveSessionManager sessionManager = new KiteLiveSessionManager(
                 config,
-                new KiteDailyTokenStore(localTokenFile),
+            tokenStore,
                 sessionState,
                 live15mAggregator,
                 jdbcUrl
@@ -80,7 +91,8 @@ public final class KiteLiveConsoleMain {
                 jdbcUrl,
                 Path.of("ui", "scenario-research").toAbsolutePath().normalize(),
                 liveMarketService,
-                sessionManager
+                sessionManager,
+                replayService
         );
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

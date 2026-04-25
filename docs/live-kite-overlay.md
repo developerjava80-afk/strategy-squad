@@ -6,6 +6,7 @@ Required pre-task review:
 
 - review [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md)
 - review [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md)
+- review [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md) before changing scanner, signal, decision, adjustment, profit-booking, risk-guard, or orchestrator behavior
 
 ## Purpose
 
@@ -18,6 +19,7 @@ It must:
 - maintain current-session 15-minute aggregates
 - compare live structures against canonical historical baselines
 - keep the UI aware of feed status and staleness
+- support position-session persistence, adjustment auditability, and post-run reporting
 
 It must not:
 
@@ -25,6 +27,31 @@ It must not:
 - redefine historical fair-price truth
 - move pricing logic into the browser
 - become an execution or broker workflow
+
+## Roadmap Alignment
+
+The live overlay is the foundation for the agentic theta-decay roadmap, but it is not the full agentic loop yet.
+
+Already present:
+
+- live NIFTY and BANKNIFTY spot and option persistence
+- live structure pricing and historical comparison
+- empirical delta calculation
+- partial delta-adjusted theta assessment inside the adjustment engine
+- lot-based `ADD` and `REDUCE` adjustment decisions
+- cooldown, churn guard, staleness/readiness checks, booked PnL, audit logging, simulation replay, and reports
+
+Still needed:
+
+- Morning Scanner Agent for all active weekly contracts
+- first-class reusable theta/delta signal snapshots
+- Decision Agent with explicit `ENTER`, `HOLD`, `ADD`, `REDUCE`, `SHIFT_STRIKE`, `BOOK_PROFIT`, and `EXIT` commands
+- Position Builder Agent for near-delta-neutral max-theta structures
+- standalone Profit Booking Agent
+- global Risk Guard Agent
+- market-day orchestrator and compact UI/report surfaces for agent state
+
+The implementation order is defined in [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md).
 
 ## Runtime path
 
@@ -81,6 +108,17 @@ Recommended login path:
    - builds current-session structure trend from `options_live_15m`
    - reuses `StrategyAnalysisService` for live-vs-history comparison
    - hydrates live spot and live leg prices back into the UI input form through the overlay payload
+   - evaluates the live delta-adjustment engine and returns the current adjustment outcome payload
+
+6. `PositionSessionActionService`
+   - persists `ADD`, `REDUCE`, and manual exit actions
+   - preserves booked PnL for exited quantity
+   - blends entry price when quantity is added to an existing compatible leg
+
+7. `StrategyRunReportService`
+   - writes markdown execution reports for completed live or simulation runs
+   - stores reports under `docs/reports`
+   - must fail safely without breaking the active run
 
 ## Tables
 
@@ -135,6 +173,75 @@ Live endpoints are available only when the console is started through `KiteLiveC
   - current-session live trend
   - canonical historical comparison via `EconomicMetrics`
 
+Session and reporting endpoints used by the same workstation:
+
+- `POST /api/position-sessions`
+- `POST /api/position-sessions/{sessionId}/actions`
+- `POST /api/reports/strategy-run`
+
+Simulation endpoints that reuse the same live-market services:
+
+- `POST /api/simulation/start`
+- `POST /api/simulation/stop`
+- `GET /api/simulation/status`
+
+## Current live adjustment behavior
+
+The current live path includes a portfolio-level delta adjustment engine. It does not infer risk from a single raw leg trend alone.
+
+Current design points:
+
+- portfolio net delta is the primary adjustment input
+- put delta sign is respected through side-aware signed contribution
+- trigger hierarchy remains:
+  - `HARD`
+  - `NORMAL`
+  - `DELAYED`
+  - `SKIPPED`
+- current actions supported:
+  - `REDUCE` one lot from an existing open leg
+  - `ADD` one lot to a better balancing live candidate strike
+- max total lots = `20`
+- cooldown and churn guard remain active
+- hard-risk paths may bypass missing volume confirmation
+- no action is allowed if post-action absolute net delta is worse
+
+Current scoring inputs:
+
+- delta-improvement
+- theta / carry proxy
+- liquidity score
+- churn penalty
+- risk penalty
+
+Current observability exposed through the adjustment payload and audit path:
+
+- trigger type
+- reason code
+- old/new quantity
+- lots before/after
+- net delta before/post
+- improvement
+- underlying direction
+- profit alignment
+- live PnL slope
+- volume confirmation / bypass
+- theta / liquidity / candidate score
+
+## Current simulation behavior
+
+The replay service uses the same live-session state and downstream services as live mode.
+
+Current replay behavior:
+
+- replays `spot_live` and `options_live` rows in exchange-time order
+- starts from market open (`09:15 IST`) for the chosen replay date
+- drives `SimulationClock` from the replay timestamp rather than wall-clock time
+- exposes progress and replay time through `/api/simulation/status`
+- allows the same live adjustment engine and report flow to run on replayed data
+
+Simulation is intentionally not a separate pricing path. It exercises the same live structure, delta-response, session persistence, and reporting surfaces.
+
 ## Current transport note
 
 The current implementation uses Kite `/quote` polling every 2 seconds instead of the Kite WebSocket SDK.
@@ -155,3 +262,6 @@ That is a transport-level compromise, not a data-model change:
   - bad NFO option-universe filtering
   - option raw write datatype mismatch
   - session not restarted after code/schema fixes
+- live and simulation runs both write markdown execution reports with mode-specific filenames such as:
+  - `strategy-run-20260424-153000-live.md`
+  - `strategy-run-20260424-154500-simulation.md`

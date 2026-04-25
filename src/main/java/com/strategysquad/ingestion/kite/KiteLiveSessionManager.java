@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Objects;
 import java.util.Optional;
@@ -20,6 +21,8 @@ import java.util.Optional;
 public final class KiteLiveSessionManager {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final LocalTime MARKET_OPEN = LocalTime.of(9, 0);
+    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 35);
     private static final String SELECT_LAST_SPOT_SQL =
             "SELECT close_price"
                     + " FROM spot_historical"
@@ -61,6 +64,12 @@ public final class KiteLiveSessionManager {
         LocalDate today = LocalDate.now(IST);
         Optional<String> token = tokenStore.loadForDate(today);
         if (token.isPresent()) {
+            if (!isMarketHours()) {
+                sessionState.resetForLogin();
+                sessionState.setStatus(LiveSessionState.Status.DISCONNECTED);
+                sessionState.setDisconnectReason("Outside market hours. Live polling will start after market open.");
+                return;
+            }
             try {
                 validateAndStartSession(token.get());
             } catch (RuntimeException exception) {
@@ -194,5 +203,10 @@ public final class KiteLiveSessionManager {
             }
         }
         throw new IllegalStateException("Missing historical spot baseline for " + underlying);
+    }
+
+    private static boolean isMarketHours() {
+        LocalTime now = LocalTime.now(IST);
+        return !now.isBefore(MARKET_OPEN) && !now.isAfter(MARKET_CLOSE);
     }
 }

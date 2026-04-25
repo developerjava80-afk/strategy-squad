@@ -7,6 +7,7 @@ Required pre-task review:
 - Before implementing or changing any strategy-analysis logic, recommendation logic, payoff metric, or user-facing interpretation, review [options-strategy-domain-contract.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/options-strategy-domain-contract.md).
 - Treat that contract as the mandatory business/domain brief for this workstation.
 - Before making code changes, also review [developer-notes.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/developer-notes.md).
+- For scanner, decision-agent, signal-engine, profit-booking, risk-guard, or orchestrator work, review [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md).
 
 ## Product posture
 
@@ -15,6 +16,30 @@ Required pre-task review:
 - Moneyness and time-to-expiry remain the primary comparison dimensions at the leg level.
 - The visible screen stays compact and numeric.
 - Matched cases and deeper detail belong in downloadable reports, not in on-screen clutter.
+- The broader platform roadmap now includes an agentic theta-decay live-assist loop. This workstation remains the historical and live overlay surface that the agentic layer consumes; it should not become a broker order-entry screen.
+
+## Roadmap Boundary
+
+Current workstation scope:
+
+- manually defined strategy structures
+- historical fair-value and realized-outcome comparison
+- live overlay hydration
+- persisted position sessions
+- current `ADD` / `REDUCE` delta adjustment support
+- simulation replay and markdown reports
+
+Next roadmap scope:
+
+- scanner-ranked short-option opportunities
+- reusable theta/delta signal snapshots
+- unified Decision Agent commands
+- Position Builder proposals
+- Profit Booking Agent decisions
+- global Risk Guard overrides
+- market-day orchestrator state
+
+Those roadmap items are tracked in [agentic-live-trading-decision-loop.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/agentic-live-trading-decision-loop.md). The workstation should expose the resulting state compactly after the backend contracts are stable.
 
 ## Current structure-testing layer
 
@@ -137,6 +162,8 @@ Current local APIs:
 - `POST /api/strategy-analysis`
 - `GET /api/diagnostics`
 - workflow persistence endpoints under `/api/workflow/*`
+- position-session persistence endpoints under `/api/position-sessions*`
+- strategy-run report endpoint under `POST /api/reports/strategy-run`
 
 Live overlay APIs when booted through `KiteLiveConsoleMain`:
 
@@ -145,6 +172,12 @@ Live overlay APIs when booted through `KiteLiveConsoleMain`:
 - `POST /api/live/structure`
 - `POST /api/live/structure-trend`
 - `POST /api/live/overlay`
+
+Simulation APIs when the replay service is enabled:
+
+- `POST /api/simulation/start`
+- `POST /api/simulation/stop`
+- `GET /api/simulation/status`
 
 `POST /api/strategy-analysis` is now the main console endpoint. It accepts a form-encoded multi-leg structure and returns one compact `EconomicMetrics` payload for the UI.
 
@@ -185,6 +218,13 @@ When live mode is enabled, the top bar also shows:
 - current live structure premium
 - last tick age
 
+The current workstation also includes:
+
+- persisted position sessions with booked PnL and audit history
+- manual exit support for selected legs and exit-all
+- simulation replay status for date, replay time, and progress
+- auto-generated markdown execution reports for completed live and simulation runs
+
 Live input hydration behavior:
 
 - when live structure quotes are available, the UI hydrates the selected underlying spot into the spot input
@@ -192,6 +232,102 @@ Live input hydration behavior:
 - the historical comparison still remains canonical and DB-backed; the live values are only current-state overlays used as the current scenario input
 
 Deep diagnostics and matched-case exploration stay off the main screen.
+
+## Live adjustment engine
+
+The current live structure path includes a portfolio-level delta adjustment engine. It runs only on live structure state and on simulation replay state that reuses the same live-session tables and services.
+
+Current adjustment behavior:
+
+- net portfolio delta is the primary risk input
+- side-aware delta contribution is used for long/short CE and PE legs
+- trigger hierarchy remains `HARD`, `NORMAL`, `DELAYED`, `SKIPPED`
+- cooldown and churn-guard protections are active
+- volume is a secondary confirmation signal, not the sole gate
+- booked PnL is preserved for all `REDUCE` / exit actions
+- adds do not book PnL and instead increase or create compatible legs in the persisted position session
+
+Current decision capability:
+
+- `REDUCE` exactly one lot from an existing open leg when doing so improves portfolio neutrality
+- `ADD` exactly one lot to a better balancing live strike when:
+  - the candidate improves absolute net delta
+  - total lots stay within the configured cap
+  - score wins over reduce candidates in the active trigger mode
+
+Current scoring inputs:
+
+- delta-improvement toward neutrality
+- theta / carry proxy
+- liquidity score
+- churn penalty
+- risk penalty
+
+Current safeguards:
+
+- max total lots = `20`
+- whole-lot adjustments only
+- no action if post-adjustment absolute net delta is worse
+- no adjustment if required live price/delta data is missing
+- no reduce below one remaining lot
+- never adjust both sides at once
+
+## Position session and audit state
+
+The workstation persists run state so live and simulation adjustments remain auditable across refreshes.
+
+Current persisted session state includes:
+
+- session metadata
+- starting and current leg quantities
+- blended entry price when quantity is added to an existing leg
+- booked PnL per leg
+- session-level last delta-adjustment timestamp
+- audit entries for:
+  - `ADD`
+  - `REDUCE`
+  - `MANUAL_EXIT`
+  - `EXIT_ALL`
+  - meaningful `SKIP` / `DELAYED` decisions in the report path
+
+Audit entries currently capture:
+
+- old/new quantity
+- lots before/after
+- reason / reason code / trigger type
+- delta and volume fields
+- underlying direction
+- profit alignment
+- live PnL slope inputs
+- theta / liquidity / total candidate score
+
+## Execution reports
+
+After each completed live or simulation run, the workstation now writes a markdown execution report under `docs/reports/`.
+
+Current report behavior:
+
+- output directory: `docs/reports/`
+- filename format: `strategy-run-YYYYMMDD-HHMMSS-{mode}.md`
+- supported modes:
+  - `live`
+  - `simulation`
+- report generation is best-effort and must not break the run if writing fails
+
+Current report sections:
+
+- Run Metadata
+- Initial Structure
+- Adjustment Timeline
+- Signal Snapshot Per Adjustment
+- PnL Summary
+- Final Structure
+- Adjustment Decision Summary
+- Observations
+
+Reference sample:
+
+- [sample-strategy-run-report.md](/abs/path/c:/Users/shiva/OptionAlpha/strategy-squad/docs/reports/sample-strategy-run-report.md)
 
 ## Reproducibility contract
 
@@ -246,6 +382,8 @@ Then open:
 
 - `http://localhost:8080`
 
+If simulation support is wired into the boot path, the same UI also exposes replay controls that start from market open and reuse the live-market services.
+
 ### Live research server
 
 Apply `V004__live_session_tables.sql`, create `kite.properties`, then start the live console:
@@ -271,6 +409,7 @@ Live runtime notes:
 - live ticks persist only into `spot_live`, `options_live`, `options_live_enriched`, `options_live_15m`, and `live_structure_snapshot`
 - live overlay data never writes into historical research tables
 - the current implementation uses Kite `/quote` polling for transport, but preserves the same live/historical boundary required by the product design
+- live and simulation runs can both generate markdown execution reports through the shared report endpoint
 
 ## Validation status
 

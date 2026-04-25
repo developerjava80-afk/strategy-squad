@@ -4,12 +4,15 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 set "KITE_PROPS=%PROJECT_ROOT%\kite.properties"
+set "LOG_FILE=%PROJECT_ROOT%\run\research-console.log"
 
 set "PORT=8080"
 if not "%~1"=="" set "PORT=%~1"
 
 echo [info] Project root: %PROJECT_ROOT%
 echo [info] Target port: %PORT%
+if not exist "%PROJECT_ROOT%\run" mkdir "%PROJECT_ROOT%\run" >nul 2>&1
+echo [info] Log file: %LOG_FILE%
 
 call :KillPort "%PORT%"
 if errorlevel 1 goto :ErrorClearPort
@@ -33,9 +36,10 @@ call mvn -q -DskipTests compile
 if errorlevel 1 goto :ErrorBuild
 
 echo [info] Starting live research backend with daily login flow...
-start "StrategySquad-ResearchConsole-%PORT%" cmd /c "cd /d ""%PROJECT_ROOT%"" && mvn -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain"
+del /q "%LOG_FILE%" >nul 2>&1
+start "StrategySquad-ResearchConsole-%PORT%" cmd /c "cd /d ""%PROJECT_ROOT%"" && mvn -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain >> ""%LOG_FILE%"" 2>&1"
 
-call :WaitForPort "%PORT%" "60"
+call :WaitForReady "%PORT%" "300"
 if errorlevel 1 goto :ErrorTimeout
 
 set "UI_URL=http://localhost:%PORT%/login.html"
@@ -83,6 +87,10 @@ exit /b 1
 
 :ErrorTimeout
 echo [error] Backend did not become ready on port %PORT% within timeout.
+if exist "%LOG_FILE%" (
+    echo [error] Last backend log lines:
+    powershell -NoProfile -Command "Get-Content -Path '%LOG_FILE%' -Tail 40"
+)
 popd >nul 2>&1
 exit /b 1
 
@@ -102,7 +110,7 @@ for /f "tokens=5" %%P in ('netstat -aon ^| findstr :%KPORT% ^| findstr LISTENING
 if "!FOUND!"=="0" echo [info] Port %KPORT% is already free.
 exit /b 0
 
-:WaitForPort
+:WaitForReady
 set "WPORT=%~1"
 set "WTIMEOUT=%~2"
 set /a ELAPSED=0
@@ -110,9 +118,13 @@ set /a ELAPSED=0
 :WaitLoop
 set "OPEN=0"
 for /f "tokens=5" %%P in ('netstat -aon ^| findstr :%WPORT% ^| findstr LISTENING') do set "OPEN=1"
-if "!OPEN!"=="1" exit /b 0
+if "!OPEN!"=="1" (
+    powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:%WPORT%/api/auth/status -TimeoutSec 5; if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) { exit 0 } else { exit 1 } } catch { exit 1 }"
+    if not errorlevel 1 exit /b 0
+)
 if !ELAPSED! GEQ !WTIMEOUT! exit /b 1
 set /a ELAPSED+=1
+echo [info] Waiting for backend readiness... !ELAPSED!s
 ping -n 2 127.0.0.1 >nul
 goto WaitLoop
 

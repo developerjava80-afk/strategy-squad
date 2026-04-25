@@ -47,6 +47,7 @@ public final class ResearchConsoleServer {
                 jdbcUrl,
                 Path.of("ui", "scenario-research").toAbsolutePath().normalize(),
                 null,
+                null,
                 null
         );
     }
@@ -58,12 +59,33 @@ public final class ResearchConsoleServer {
             LiveMarketService liveMarketService,
             KiteLiveSessionManager kiteLiveSessionManager
     ) throws IOException {
+        return startServer(port, jdbcUrl, uiRoot, liveMarketService, kiteLiveSessionManager, null);
+    }
+
+    public static HttpServer startServer(
+            int port,
+            String jdbcUrl,
+            Path uiRoot,
+            LiveMarketService liveMarketService,
+            KiteLiveSessionManager kiteLiveSessionManager,
+            HistoricalReplayService replayService
+    ) throws IOException {
         FairValueCohortService service = new FairValueCohortService(jdbcUrl);
         TimeframeAnalysisService timeframeAnalysisService = new TimeframeAnalysisService(jdbcUrl);
         ForwardOutcomeCohortService forwardOutcomeService = new ForwardOutcomeCohortService(jdbcUrl);
         StrategyAnalysisService strategyAnalysisService = new StrategyAnalysisService(jdbcUrl);
         DiagnosticsCohortService diagnosticsService = new DiagnosticsCohortService(jdbcUrl);
         ResearchWorkspaceService workspaceService = new ResearchWorkspaceService(jdbcUrl);
+        Path repoRoot = uiRoot.getParent() == null || uiRoot.getParent().getParent() == null
+                ? Path.of(".").toAbsolutePath().normalize()
+                : uiRoot.getParent().getParent().toAbsolutePath().normalize();
+        Path positionStoreRoot = uiRoot.getParent() == null || uiRoot.getParent().getParent() == null
+                ? Path.of("run", "position-sessions").toAbsolutePath().normalize()
+                : uiRoot.getParent().getParent().resolve("run").resolve("position-sessions").toAbsolutePath().normalize();
+        Path reportsRoot = repoRoot.resolve("docs").resolve("reports");
+        ResearchPositionSessionService positionSessionService = new ResearchPositionSessionService(positionStoreRoot);
+        PositionSessionActionService positionSessionActionService = new PositionSessionActionService();
+        StrategyRunReportService strategyRunReportService = new StrategyRunReportService(reportsRoot);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/fair-value", new FairValueHandler(service));
@@ -74,6 +96,9 @@ public final class ResearchConsoleServer {
         server.createContext("/api/workflow/collections", new WorkflowCollectionsHandler(workspaceService));
         server.createContext("/api/workflow/studies/", new WorkflowStudyHandler(workspaceService));
         server.createContext("/api/workflow/studies", new WorkflowStudiesHandler(workspaceService));
+        server.createContext("/api/position-sessions/", new PositionSessionItemHandler(positionSessionService, positionSessionActionService));
+        server.createContext("/api/position-sessions", new PositionSessionsHandler(positionSessionService));
+        server.createContext("/api/reports/strategy-run", new StrategyRunReportHandler(strategyRunReportService));
         if (liveMarketService != null) {
             server.createContext("/api/live/status", new LiveStatusHandler(liveMarketService));
             server.createContext("/api/live/spot", new LiveSpotHandler(liveMarketService));
@@ -84,6 +109,11 @@ public final class ResearchConsoleServer {
         if (kiteLiveSessionManager != null) {
             server.createContext("/api/auth/status", new AuthStatusHandler(kiteLiveSessionManager));
             server.createContext("/api/auth/login", new AuthLoginHandler(kiteLiveSessionManager));
+        }
+        if (replayService != null) {
+            server.createContext("/api/simulation/start", new SimulationStartHandler(replayService));
+            server.createContext("/api/simulation/stop", new SimulationStopHandler(replayService));
+            server.createContext("/api/simulation/status", new SimulationStatusHandler(replayService));
         }
         server.createContext("/", new StaticUiHandler(uiRoot));
         server.setExecutor(Executors.newFixedThreadPool(6));
@@ -96,6 +126,9 @@ public final class ResearchConsoleServer {
         }
         if (kiteLiveSessionManager != null) {
             System.out.println("Daily Kite login endpoints enabled under /api/auth/*");
+        }
+        if (replayService != null) {
+            System.out.println("Simulation replay endpoints enabled under /api/simulation/*");
         }
         return server;
     }
@@ -206,6 +239,143 @@ public final class ResearchConsoleServer {
             } catch (SQLException exception) {
                 sendJson(exchange, 500, "{\"error\":\"Unable to load workflow study\",\"details\":\""
                         + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class PositionSessionsHandler implements HttpHandler {
+        private final ResearchPositionSessionService service;
+
+        private PositionSessionsHandler(ResearchPositionSessionService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                PositionSessionSnapshot snapshot = service.parseSession(readRequestBody(exchange));
+                service.save(snapshot);
+                sendJson(exchange, 200, service.toJson(snapshot));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (IOException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to persist position session\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class PositionSessionItemHandler implements HttpHandler {
+        private final ResearchPositionSessionService service;
+        private final PositionSessionActionService actionService;
+
+        private PositionSessionItemHandler(
+                ResearchPositionSessionService service,
+                PositionSessionActionService actionService
+        ) {
+            this.service = service;
+            this.actionService = actionService;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String suffix = path.substring("/api/position-sessions/".length());
+            boolean actionRequest = suffix.endsWith("/actions");
+            String sessionId = actionRequest
+                    ? suffix.substring(0, suffix.length() - "/actions".length())
+                    : suffix;
+            if (sessionId.endsWith("/")) {
+                sessionId = sessionId.substring(0, sessionId.length() - 1);
+            }
+            if (sessionId.isBlank()) {
+                sendJson(exchange, 400, "{\"error\":\"Missing session id\"}");
+                return;
+            }
+            try {
+                if (actionRequest) {
+                    if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                        sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                        return;
+                    }
+                    PositionSessionSnapshot existing = service.load(sessionId);
+                    if (existing == null) {
+                        sendJson(exchange, 404, "{\"error\":\"Position session not found\"}");
+                        return;
+                    }
+                    PositionSessionActionRequest request = service.parseAction(readRequestBody(exchange));
+                    PositionSessionSnapshot updated = actionService.apply(existing, request);
+                    service.save(updated);
+                    sendJson(exchange, 200, service.toJson(updated));
+                    return;
+                }
+                if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    service.delete(sessionId);
+                    sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                    return;
+                }
+                if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                    return;
+                }
+                PositionSessionSnapshot snapshot = service.load(sessionId);
+                if (snapshot == null) {
+                    sendJson(exchange, 404, "{\"error\":\"Position session not found\"}");
+                    return;
+                }
+                sendJson(exchange, 200, service.toJson(snapshot));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (IOException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to read position session\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class StrategyRunReportHandler implements HttpHandler {
+        private final StrategyRunReportService service;
+
+        private StrategyRunReportHandler(StrategyRunReportService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                StrategyRunReportService.StrategyRunReportRequest request = service.parseRequest(readRequestBody(exchange));
+                Path written = service.writeReportSafely(request);
+                sendJson(exchange, 200, """
+                        {"written":%s,"path":%s}
+                        """.formatted(
+                        written != null,
+                        written == null ? "null" : quoteOrNull(written.toString())
+                ));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             }
         }
     }
@@ -479,12 +649,15 @@ public final class ResearchConsoleServer {
                         ? parseFormBody(exchange)
                         : parseQuery(exchange.getRequestURI());
                 StrategyStructureDefinition definition = parseStrategyDefinition(query);
-                sendJson(exchange, 200, toJson(service.loadStructure(definition)));
+                sendJson(exchange, 200, toJson(service.loadStructure(definition, parseLastAdjustment(query))));
             } catch (IllegalArgumentException exception) {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             } catch (SQLException exception) {
                 sendJson(exchange, 500, "{\"error\":\"Unable to compute live structure snapshot\",\"details\":\""
                         + escapeJson(exception.getMessage()) + "\"}");
+            } catch (RuntimeException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unexpected live structure failure\",\"details\":\""
+                        + escapeJson(exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()) + "\"}");
             }
         }
     }
@@ -604,6 +777,114 @@ public final class ResearchConsoleServer {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Simulation handlers
+    // -------------------------------------------------------------------------
+
+    private static String toJson(HistoricalReplayService.SimulationStatus status) {
+        return """
+                {
+                  "active":%s,
+                  "replayDate":%s,
+                  "replayTimeIst":%s,
+                  "speed":%d,
+                  "ticksReplayed":%d,
+                  "totalTicks":%d
+                }
+                """.formatted(
+                status.active(),
+                status.replayDate() == null ? "null" : "\"" + escapeJson(status.replayDate()) + "\"",
+                status.replayTimeIst() == null ? "null" : "\"" + escapeJson(status.replayTimeIst()) + "\"",
+                status.speed(),
+                status.ticksReplayed(),
+                status.totalTicks()
+        );
+    }
+
+    private static final class SimulationStartHandler implements HttpHandler {
+        private final HistoricalReplayService replayService;
+
+        private SimulationStartHandler(HistoricalReplayService replayService) {
+            this.replayService = replayService;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> params = parseFormBody(exchange);
+                String dateStr = params.get("date");
+                if (dateStr == null || dateStr.isBlank()) {
+                    sendJson(exchange, 400, "{\"error\":\"date parameter is required (YYYY-MM-DD)\"}");
+                    return;
+                }
+                LocalDate date = LocalDate.parse(dateStr.trim());
+                int speed = 1;
+                String speedStr = params.get("speed");
+                if (speedStr != null && !speedStr.isBlank()) {
+                    speed = Integer.parseInt(speedStr.trim());
+                }
+                replayService.start(date, speed);
+                sendJson(exchange, 200, toJson(replayService.getStatus()));
+            } catch (IllegalArgumentException exception) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (IllegalStateException exception) {
+                sendJson(exchange, 409, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            } catch (RuntimeException exception) {
+                sendJson(exchange, 500, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    private static final class SimulationStopHandler implements HttpHandler {
+        private final HistoricalReplayService replayService;
+
+        private SimulationStopHandler(HistoricalReplayService replayService) {
+            this.replayService = replayService;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            replayService.stop();
+            sendJson(exchange, 200, toJson(replayService.getStatus()));
+        }
+    }
+
+    private static final class SimulationStatusHandler implements HttpHandler {
+        private final HistoricalReplayService replayService;
+
+        private SimulationStatusHandler(HistoricalReplayService replayService) {
+            this.replayService = replayService;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            sendJson(exchange, 200, toJson(replayService.getStatus()));
+        }
+    }
+
     private static final class StaticUiHandler implements HttpHandler {
         private final Path uiRoot;
 
@@ -629,6 +910,10 @@ public final class ResearchConsoleServer {
             };
             byte[] body = Files.readAllBytes(target);
             exchange.getResponseHeaders().set("Content-Type", contentType);
+            exchange.getResponseHeaders().set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            exchange.getResponseHeaders().set("Pragma", "no-cache");
+            exchange.getResponseHeaders().set("Expires", "0");
+            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(body);
@@ -665,30 +950,67 @@ public final class ResearchConsoleServer {
         return parseQuery(uri);
     }
 
+    private static String readRequestBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
     private static StrategyStructureDefinition parseStrategyDefinition(Map<String, String> query) {
         int legCount = Integer.parseInt(FairValueHandler.required(query, "legCount"));
         if (legCount <= 0) {
             throw new IllegalArgumentException("Strategy requires at least one leg");
         }
+        String underlying = FairValueHandler.required(query, "underlying");
         java.util.List<StrategyStructureDefinition.StrategyLeg> legs = new java.util.ArrayList<>();
         for (int index = 0; index < legCount; index++) {
             String prefix = "leg" + index;
+            Integer quantity = parseIntegerOrNull(query.get(prefix + "Quantity"));
+            if (quantity != null) {
+                LotSizingRules.validateOpenQuantity(underlying, quantity);
+            }
             legs.add(new StrategyStructureDefinition.StrategyLeg(
                     query.getOrDefault(prefix + "Label", "Leg " + (index + 1)),
                     FairValueHandler.required(query, prefix + "OptionType"),
                     FairValueHandler.required(query, prefix + "Side"),
                     new BigDecimal(FairValueHandler.required(query, prefix + "Strike")),
-                    new BigDecimal(FairValueHandler.required(query, prefix + "EntryPrice"))
+                    new BigDecimal(FairValueHandler.required(query, prefix + "EntryPrice")),
+                    quantity
             ));
         }
         return new StrategyStructureDefinition(
                 query.getOrDefault("mode", "SINGLE_OPTION"),
                 query.getOrDefault("orientation", "BUYER"),
-                FairValueHandler.required(query, "underlying"),
+                underlying,
                 query.getOrDefault("expiryType", "WEEKLY"),
                 Integer.parseInt(FairValueHandler.required(query, "dte")),
                 new BigDecimal(FairValueHandler.required(query, "spot")),
+                parseInstantOrNull(query.get("lastDeltaAdjustmentTs")),
+                parseInstantOrNull(query.get("pendingAdjustmentSinceTs")),
                 legs
+        );
+    }
+
+    private static DeltaAdjustmentService.LastAdjustment parseLastAdjustment(Map<String, String> query) {
+        String actionType = query.get("lastDeltaAdjustmentActionType");
+        if (actionType == null || actionType.isBlank()) {
+            return null;
+        }
+        DeltaAdjustmentService.ActionType parsedActionType;
+        try {
+            parsedActionType = DeltaAdjustmentService.ActionType.valueOf(actionType.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+        BigDecimal strike = null;
+        String rawStrike = query.get("lastDeltaAdjustmentStrike");
+        if (rawStrike != null && !rawStrike.isBlank()) {
+            strike = new BigDecimal(rawStrike);
+        }
+        return new DeltaAdjustmentService.LastAdjustment(
+                parsedActionType,
+                query.get("lastDeltaAdjustmentOptionType"),
+                query.get("lastDeltaAdjustmentSide"),
+                strike,
+                parseInstantOrNull(query.get("lastDeltaAdjustmentTs"))
         );
     }
 
@@ -896,7 +1218,8 @@ public final class ResearchConsoleServer {
                   "lastTickTs":%s,
                   "secondsSinceLastTick":%d,
                   "subscribedInstruments":%d,
-                  "ticksProcessed":%d
+                  "ticksProcessed":%d,
+                  "dataReadiness":%s
                 }
                 """.formatted(
                 escapeJson(snapshot.status()),
@@ -904,7 +1227,65 @@ public final class ResearchConsoleServer {
                 snapshot.lastTickTs() == null ? "null" : "\"" + snapshot.lastTickTs() + "\"",
                 snapshot.secondsSinceLastTick(),
                 snapshot.subscribedInstruments(),
-                snapshot.ticksProcessed()
+                snapshot.ticksProcessed(),
+                toJson(snapshot.dataReadiness())
+        );
+    }
+
+    private static String toJson(LiveMarketReadinessService.LiveMarketReadinessSnapshot snapshot) {
+        if (snapshot == null) {
+            return "null";
+        }
+        String underlyingsJson = snapshot.underlyings().stream()
+                .map(ResearchConsoleServer::toJson)
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        return """
+                {
+                  "sessionDate":%s,
+                  "generatedAt":%s,
+                  "available":%s,
+                  "unavailableReason":%s,
+                  "feedFreshNow":%s,
+                  "anyStraddleReadyToday":%s,
+                  "niftyStraddleReadyToday":%s,
+                  "bankNiftyStraddleReadyToday":%s,
+                  "latestSpotTickTs":%s,
+                  "latestOptionTickTs":%s,
+                  "summary":"%s",
+                  "underlyings":[%s]
+                }
+                """.formatted(
+                quoteOrNull(snapshot.sessionDate()),
+                quoteOrNull(snapshot.generatedAt()),
+                snapshot.available(),
+                quoteOrNull(snapshot.unavailableReason()),
+                snapshot.feedFreshNow(),
+                snapshot.anyStraddleReadyToday(),
+                snapshot.niftyStraddleReadyToday(),
+                snapshot.bankNiftyStraddleReadyToday(),
+                quoteOrNull(snapshot.latestSpotTickTs()),
+                quoteOrNull(snapshot.latestOptionTickTs()),
+                escapeJson(snapshot.summary()),
+                underlyingsJson
+        );
+    }
+
+    private static String toJson(LiveMarketReadinessService.UnderlyingReadiness snapshot) {
+        return """
+                {
+                  "underlying":"%s",
+                  "spotTickCount":%d,
+                  "callTickCount":%d,
+                  "putTickCount":%d,
+                  "straddleReadyToday":%s
+                }
+                """.formatted(
+                escapeJson(snapshot.underlying()),
+                snapshot.spotTickCount(),
+                snapshot.callTickCount(),
+                snapshot.putTickCount(),
+                snapshot.straddleReadyToday()
         );
     }
 
@@ -920,15 +1301,25 @@ public final class ResearchConsoleServer {
         return """
                 {
                   "underlying":"%s",
-                  "price":%.6f,
+                  "price":%s,
+                  "priceType":"%s",
+                  "source":"%s",
+                  "sessionState":"%s",
                   "asOf":%s,
-                  "stale":%s
+                  "tradeDate":%s,
+                  "isStale":%s,
+                  "diagnosticReason":%s
                 }
                 """.formatted(
                 escapeJson(snapshot.underlying()),
-                snapshot.price(),
-                snapshot.asOf() == null ? "null" : "\"" + snapshot.asOf() + "\"",
-                snapshot.stale()
+                snapshot.price() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", snapshot.price()),
+                escapeJson(snapshot.priceType() == null ? "UNAVAILABLE" : snapshot.priceType()),
+                escapeJson(snapshot.source() == null ? "unknown" : snapshot.source()),
+                escapeJson(snapshot.sessionState() == null ? "UNKNOWN" : snapshot.sessionState()),
+                quoteOrNull(snapshot.asOf()),
+                quoteOrNull(snapshot.tradeDate()),
+                snapshot.stale(),
+                quoteOrNull(snapshot.diagnosticReason())
         );
     }
 
@@ -944,7 +1335,26 @@ public final class ResearchConsoleServer {
                           "lastPrice":%s,
                           "bidPrice":%s,
                           "askPrice":%s,
-                          "missing":%s
+                          "priceType":"%s",
+                          "source":"%s",
+                          "asOf":%s,
+                          "stale":%s,
+                          "diagnosticReason":%s,
+                          "missing":%s,
+                          "lotSize":%d,
+                          "quantity":%d,
+                          "currentVolume":%s,
+                          "dayAverageVolume":%s,
+                          "deltaResponse2m":%s,
+                          "deltaResponse5m":%s,
+                          "deltaResponseSod":%s,
+                          "deltaResponse2mObservationCount":%s,
+                          "deltaResponse5mObservationCount":%s,
+                          "deltaResponseSodObservationCount":%s,
+                          "deltaResponse2mUnderlyingMove":%s,
+                          "deltaResponse5mUnderlyingMove":%s,
+                          "deltaResponseSodUnderlyingMove":%s,
+                          "deltaResponseCalculatedAt":%s
                         }
                         """.formatted(
                         escapeJson(leg.label()),
@@ -955,7 +1365,26 @@ public final class ResearchConsoleServer {
                         leg.lastPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.lastPrice()),
                         leg.bidPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.bidPrice()),
                         leg.askPrice() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", leg.askPrice()),
-                        leg.missing()
+                        escapeJson(leg.priceType() == null ? "UNAVAILABLE" : leg.priceType()),
+                        escapeJson(leg.source() == null ? "MISSING" : leg.source()),
+                        quoteOrNull(leg.asOf()),
+                        leg.stale(),
+                        quoteOrNull(leg.diagnosticReason()),
+                        leg.missing(),
+                        leg.lotSize(),
+                        leg.quantity(),
+                        leg.currentVolume() == null ? "null" : Long.toString(leg.currentVolume()),
+                        decimalOrNull(leg.dayAverageVolume()),
+                        decimalOrNull(leg.deltaResponse2m()),
+                        decimalOrNull(leg.deltaResponse5m()),
+                        decimalOrNull(leg.deltaResponseSod()),
+                        integerOrNull(leg.deltaResponse2mObservationCount()),
+                        integerOrNull(leg.deltaResponse5mObservationCount()),
+                        integerOrNull(leg.deltaResponseSodObservationCount()),
+                        decimalOrNull(leg.deltaResponse2mUnderlyingMove()),
+                        decimalOrNull(leg.deltaResponse5mUnderlyingMove()),
+                        decimalOrNull(leg.deltaResponseSodUnderlyingMove()),
+                        quoteOrNull(leg.deltaResponseCalculatedAt())
                 ))
                 .reduce((left, right) -> left + "," + right)
                 .orElse("");
@@ -966,10 +1395,20 @@ public final class ResearchConsoleServer {
                   "orientation":"%s",
                   "underlying":"%s",
                   "expiryType":"%s",
+                  "sessionState":"%s",
                   "liveSpot":%s,
                   "liveSpotAsOf":%s,
+                  "liveSpotTradeDate":%s,
+                  "liveSpotPriceType":"%s",
+                  "liveSpotSource":"%s",
+                  "liveSpotIsStale":%s,
+                  "liveSpotDiagnosticReason":%s,
                   "economicNetPremiumPoints":%.6f,
                   "premiumLabel":"%s",
+                  "effectiveLotSize":%d,
+                  "lastDeltaAdjustmentTs":%s,
+                  "pendingAdjustmentSinceTs":%s,
+                  "deltaAdjustment":%s,
                   "partialData":%s,
                   "asOf":%s,
                   "legs":[%s]
@@ -980,13 +1419,133 @@ public final class ResearchConsoleServer {
                 escapeJson(snapshot.orientation()),
                 escapeJson(snapshot.underlying()),
                 escapeJson(snapshot.expiryType()),
+                escapeJson(snapshot.sessionState()),
                 snapshot.liveSpot() == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", snapshot.liveSpot()),
-                snapshot.liveSpotAsOf() == null ? "null" : "\"" + snapshot.liveSpotAsOf() + "\"",
+                quoteOrNull(snapshot.liveSpotAsOf()),
+                quoteOrNull(snapshot.liveSpotTradeDate()),
+                escapeJson(snapshot.liveSpotPriceType() == null ? "UNAVAILABLE" : snapshot.liveSpotPriceType()),
+                escapeJson(snapshot.liveSpotSource() == null ? "unknown" : snapshot.liveSpotSource()),
+                snapshot.liveSpotStale(),
+                quoteOrNull(snapshot.liveSpotDiagnosticReason()),
                 snapshot.economicNetPremiumPoints(),
                 escapeJson(snapshot.premiumLabel()),
+                snapshot.effectiveLotSize(),
+                quoteOrNull(snapshot.lastDeltaAdjustmentTs()),
+                quoteOrNull(snapshot.pendingAdjustmentSinceTs()),
+                snapshot.deltaAdjustment() == null ? "null" : toJson(snapshot.deltaAdjustment()),
                 snapshot.partialData(),
-                snapshot.asOf() == null ? "null" : "\"" + snapshot.asOf() + "\"",
+                quoteOrNull(snapshot.asOf()),
                 legs
+        );
+    }
+
+    private static String decimalOrNull(BigDecimal value) {
+        return value == null ? "null" : String.format(java.util.Locale.ROOT, "%.6f", value);
+    }
+
+    private static String integerOrNull(Integer value) {
+        return value == null ? "null" : Integer.toString(value);
+    }
+
+    private static String toJson(DeltaAdjustmentService.AdjustmentOutcome outcome) {
+        return """
+                {
+                  "code":"%s",
+                  "applied":%s,
+                  "timestamp":%s,
+                  "updatedLastAdjustmentTs":%s,
+                  "updatedPendingAdjustmentSinceTs":%s,
+                  "actionType":"%s",
+                  "triggerType":"%s",
+                  "reasonCode":"%s",
+                  "leg":%s,
+                  "optionType":%s,
+                  "side":%s,
+                  "strike":%s,
+                  "instrumentId":%s,
+                  "symbol":%s,
+                  "expiryDate":%s,
+                  "marketPrice":%s,
+                  "oldQuantity":%d,
+                  "newQuantity":%d,
+                  "currentTotalLots":%d,
+                  "maxTotalLots":%d,
+                  "availableLots":%d,
+                  "delta2m":%s,
+                  "delta5m":%s,
+                  "deltaSod":%s,
+                  "currentVolume":%s,
+                  "dayAverageVolume":%s,
+                  "volumeConfirmed":%s,
+                  "volumeBypassed":%s,
+                  "underlyingDirection":"%s",
+                  "profitAlignment":"%s",
+                  "livePnlPoints":%s,
+                  "livePnlChange2mPoints":%s,
+                  "livePnlChange5mPoints":%s,
+                  "netDelta2m":%s,
+                  "netDelta5m":%s,
+                  "netDeltaSod":%s,
+                  "normalizedNetDelta":%s,
+                  "improvementAbsDelta":%s,
+                  "improvementRatio":%s,
+                  "postAdjNetDelta":%s,
+                  "thetaScore":%s,
+                  "liquidityScore":%s,
+                  "score":%s,
+                  "worsening":%s,
+                  "legAsymmetryStress":%s,
+                  "reason":"%s",
+                  "message":%s
+                }
+                """.formatted(
+                escapeJson(outcome.code()),
+                outcome.applied(),
+                quoteOrNull(outcome.timestamp()),
+                quoteOrNull(outcome.updatedLastAdjustmentTs()),
+                quoteOrNull(outcome.updatedPendingAdjustmentSinceTs()),
+                escapeJson(outcome.actionType()),
+                escapeJson(outcome.triggerType()),
+                escapeJson(outcome.reasonCode()),
+                quoteOrNull(outcome.leg()),
+                quoteOrNull(outcome.optionType()),
+                quoteOrNull(outcome.side()),
+                decimalOrNull(outcome.strike()),
+                quoteOrNull(outcome.instrumentId()),
+                quoteOrNull(outcome.symbol()),
+                quoteOrNull(outcome.expiryDate()),
+                decimalOrNull(outcome.marketPrice()),
+                outcome.oldQuantity(),
+                outcome.newQuantity(),
+                outcome.currentTotalLots(),
+                outcome.maxTotalLots(),
+                outcome.availableLots(),
+                decimalOrNull(outcome.delta2m()),
+                decimalOrNull(outcome.delta5m()),
+                decimalOrNull(outcome.deltaSod()),
+                outcome.currentVolume() == null ? "null" : Long.toString(outcome.currentVolume()),
+                decimalOrNull(outcome.dayAverageVolume()),
+                outcome.volumeConfirmed(),
+                outcome.volumeBypassed(),
+                escapeJson(outcome.underlyingDirection()),
+                escapeJson(outcome.profitAlignment()),
+                decimalOrNull(outcome.livePnlPoints()),
+                decimalOrNull(outcome.livePnlChange2mPoints()),
+                decimalOrNull(outcome.livePnlChange5mPoints()),
+                decimalOrNull(outcome.netDelta2m()),
+                decimalOrNull(outcome.netDelta5m()),
+                decimalOrNull(outcome.netDeltaSod()),
+                decimalOrNull(outcome.normalizedNetDelta()),
+                decimalOrNull(outcome.improvementAbsDelta()),
+                decimalOrNull(outcome.improvementRatio()),
+                decimalOrNull(outcome.postAdjNetDelta()),
+                decimalOrNull(outcome.thetaScore()),
+                decimalOrNull(outcome.liquidityScore()),
+                decimalOrNull(outcome.score()),
+                outcome.worsening(),
+                outcome.legAsymmetryStress(),
+                escapeJson(outcome.reason()),
+                quoteOrNull(outcome.message())
         );
     }
 
@@ -1039,14 +1598,68 @@ public final class ResearchConsoleServer {
                   "spot":%s,
                   "structure":%s,
                   "trend":%s,
-                  "historicalComparison":%s
+                  "historicalComparison":%s,
+                  "liveEconomic":%s
                 }
                 """.formatted(
                 toJson(snapshot.status()),
                 snapshot.spot() == null ? "null" : toJson(snapshot.spot()),
                 snapshot.structure() == null ? "null" : toJson(snapshot.structure()),
                 snapshot.trend() == null ? "null" : toJson(snapshot.trend()),
-                snapshot.historicalComparison() == null ? "null" : toJson(snapshot.historicalComparison())
+                snapshot.historicalComparison() == null ? "null" : toJson(snapshot.historicalComparison()),
+                snapshot.liveEconomic() == null ? "null" : toJson(snapshot.liveEconomic())
+        );
+    }
+
+    private static String toJson(LiveEconomicMetrics snapshot) {
+        return """
+                {
+                  "lot":{
+                    "lotSize":%d,
+                    "scopeLabel":"%s"
+                  },
+                  "premium":{
+                    "entryPremiumLabel":"%s",
+                    "livePremiumLabel":"%s",
+                    "entryPremiumPoints":%.6f,
+                    "livePremiumPoints":%.6f,
+                    "liveVsEntryPoints":%.6f,
+                    "liveVsEntryPct":%.6f
+                  },
+                  "pnl":{
+                    "selectedSideLabel":"%s",
+                    "livePnlPoints":%.6f,
+                    "livePnlRupees":%.6f,
+                    "livePnlLabel":"%s",
+                    "markState":"%s"
+                  },
+                  "confidence":{
+                    "baseEvidenceStrength":"%s",
+                    "effectiveConfidenceLevel":"%s",
+                    "feedReliable":%s,
+                    "liveAdjustmentLabel":"%s",
+                    "confidenceDetail":"%s"
+                  }
+                }
+                """.formatted(
+                snapshot.lot().lotSize(),
+                escapeJson(snapshot.lot().scopeLabel()),
+                escapeJson(snapshot.premium().entryPremiumLabel()),
+                escapeJson(snapshot.premium().livePremiumLabel()),
+                snapshot.premium().entryPremiumPoints(),
+                snapshot.premium().livePremiumPoints(),
+                snapshot.premium().liveVsEntryPoints(),
+                snapshot.premium().liveVsEntryPct(),
+                escapeJson(snapshot.pnl().selectedSideLabel()),
+                snapshot.pnl().livePnlPoints(),
+                snapshot.pnl().livePnlRupees(),
+                escapeJson(snapshot.pnl().livePnlLabel()),
+                escapeJson(snapshot.pnl().markState()),
+                escapeJson(snapshot.confidence().baseEvidenceStrength()),
+                escapeJson(snapshot.confidence().effectiveConfidenceLevel()),
+                snapshot.confidence().feedReliable(),
+                escapeJson(snapshot.confidence().liveAdjustmentLabel()),
+                escapeJson(snapshot.confidence().confidenceDetail())
         );
     }
 
@@ -1245,6 +1858,9 @@ public final class ResearchConsoleServer {
     }
 
     private static String toJson(EconomicMetrics.RecommendationCandidate recommendation) {
+        if (recommendation == null) {
+            return "null";
+        }
         return """
                 {
                   "mode":"%s",
@@ -1514,6 +2130,21 @@ public final class ResearchConsoleServer {
 
     private static LocalDate parseLocalDate(String value) {
         return value == null || value.isBlank() ? null : LocalDate.parse(value);
+    }
+
+    private static Integer parseIntegerOrNull(String value) {
+        return value == null || value.isBlank() ? null : Integer.parseInt(value.trim());
+    }
+
+    private static Instant parseInstantOrNull(String value) {
+        return value == null || value.isBlank() ? null : Instant.parse(value.trim());
+    }
+
+    private static String quoteOrNull(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        return "\"" + escapeJson(String.valueOf(value)) + "\"";
     }
 
     private static String escapeJson(String value) {
