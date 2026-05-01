@@ -308,7 +308,8 @@ class DeltaAdjustmentServiceTest {
                 new BigDecimal(pnl2m),
                 new BigDecimal(pnl5m),
                 maxLots,
-                lastAdjustment
+                lastAdjustment,
+                null    // currentUnderlyingPrice — not required for these tests
         );
     }
 
@@ -347,7 +348,11 @@ class DeltaAdjustmentServiceTest {
                 "INS_" + token,
                 "SYM_" + token,
                 "2026-04-30",
-                stale
+                stale,
+                null,   // entryUnderlyingPrice — not required for these tests
+                null,   // entryEmpiricalDelta
+                null,   // entryExpectedDecayRatePerMinute
+                null    // entryTime
         );
     }
 }

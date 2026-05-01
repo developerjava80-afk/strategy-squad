@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Testing</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="testing">
+<div class="app-shell">
+    <header class="top-nav" aria-label="Primary">
+        <a class="brand" href="/index.html">
+            <span class="brand-mark">SS</span>
+            <span><strong>Strategy Squad</strong><small>Theta command center</small></span>
+        </a>
+        <nav class="nav-links">
+            <a href="/index.html">Dashboard</a>
+            <a href="/strategy-lab.html">Strategy Lab</a>
+            <a href="/orders.html">Orders</a>
+            <a class="active" href="/testing-analytics.html">Testing</a>
+        </nav>
+        <div class="session-card">
+            <span>Replay Lab</span>
+            <strong id="replay-session-state">Idle</strong>
+            <small>Simulation path — no live orders</small>
+        </div>
+    </header>
+
+    <main class="page">
+        <header class="page-header">
+            <div>
+                <p class="kicker">Testing and Analytics</p>
+                <h1>Theta/delta sense check and historical replay</h1>
+            </div>
+            <div class="header-actions">
+                <button class="primary-button" id="btn-header-replay" type="button">Start Replay</button>
+            </div>
+        </header>
+
+        <!-- Section 1: Theta + Delta Sense Check -->
+        <section class="analytics-grid" style="margin-bottom:14px;">
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div><p class="kicker">Sense Check</p><h2>Theta + Delta validator</h2></div>
+                </div>
+                <form id="sense-check-form" class="control-grid">
+                    <label class="field"><span>Underlying</span>
+                        <select id="sc-underlying"><option value="NIFTY">NIFTY</option><option value="BANKNIFTY">BANKNIFTY</option></select>
+                    </label>
+                    <label class="field"><span>Expiry Date</span>
+                        <input type="date" id="sc-expiry" required>
+                    </label>
+                    <label class="field"><span>Strike</span>
+                        <input type="number" id="sc-strike" step="1" placeholder="e.g. 24500" required>
+                    </label>
+                    <label class="field"><span>Option Type</span>
+                        <select id="sc-option-type"><option value="CE">CE</option><option value="PE">PE</option></select>
+                    </label>
+                    <label class="field"><span>Side</span>
+                        <select id="sc-side"><option value="SHORT">SHORT</option><option value="LONG">LONG</option></select>
+                    </label>
+                    <label class="field"><span>Entry Premium (pts)</span>
+                        <input type="number" id="sc-entry-premium" step="0.01" placeholder="e.g. 120.50" required>
+                    </label>
+                    <label class="field"><span>Current Premium (pts)</span>
+                        <input type="number" id="sc-current-premium" step="0.01" placeholder="e.g. 95.00" required>
+                    </label>
+                    <label class="field"><span>Entry Underlying</span>
+                        <input type="number" id="sc-entry-underlying" step="0.01" placeholder="e.g. 24450" required>
+                    </label>
+                    <label class="field"><span>Current Underlying</span>
+                        <input type="number" id="sc-current-underlying" step="0.01" placeholder="e.g. 24510" required>
+                    </label>
+                    <label class="field"><span>Elapsed (minutes)</span>
+                        <input type="number" id="sc-elapsed" step="1" min="1" placeholder="e.g. 45" required>
+                    </label>
+                    <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center;margin-top:4px;">
+                        <button type="submit" class="primary-button" id="sc-run-btn">Run Sense Check</button>
+                        <span id="sc-loading" hidden style="color:var(--muted);font-size:0.85rem;">Running...</span>
+                    </div>
+                </form>
+            </article>
+
+            <article class="panel" id="sc-delta-panel" hidden>
+                <div class="panel-header">
+                    <div><p class="kicker">Delta Analysis</p><h2>Observed vs historical</h2></div>
+                </div>
+                <div class="metric-strip" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+                    <article class="metric-card"><span>Observed Delta</span><strong id="sc-observed-delta">--</strong></article>
+                    <article class="metric-card"><span>Historical Avg</span><strong id="sc-historical-delta">--</strong></article>
+                    <article class="metric-card"><span>Deviation</span><strong id="sc-delta-deviation">--</strong></article>
+                    <article class="metric-card"><span>Status</span><div id="sc-delta-status-pill">--</div></article>
+                </div>
+            </article>
+
+            <article class="panel" id="sc-theta-panel" hidden>
+                <div class="panel-header">
+                    <div><p class="kicker">Theta Analysis</p><h2>Empirical vs historical</h2></div>
+                </div>
+                <div class="metric-strip" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+                    <article class="metric-card"><span>Theta Benefit/min</span><strong id="sc-theta-benefit">--</strong></article>
+                    <article class="metric-card"><span>Historical Avg/min</span><strong id="sc-historical-theta">--</strong></article>
+                    <article class="metric-card"><span>Deviation</span><strong id="sc-theta-deviation">--</strong></article>
+                    <article class="metric-card"><span>Status</span><div id="sc-theta-status-pill">--</div></article>
+                </div>
+            </article>
+
+            <article class="panel wide-panel" id="sc-signal-panel" hidden>
+                <div class="panel-header">
+                    <div><p class="kicker">Opportunity Signal</p><h2>Combined assessment</h2></div>
+                </div>
+                <div style="display:grid;gap:12px;">
+                    <div>
+                        <div style="margin-bottom:10px;"><span class="status-pill neutral" id="sc-signal-pill">--</span></div>
+                        <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px;" id="sc-signal-label">--</div>
+                        <div id="sc-signal-reason" style="color:var(--muted);line-height:1.5;font-size:0.9rem;">--</div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel" id="sc-reliability-panel" hidden>
+                <div class="panel-header">
+                    <div><p class="kicker">Reliability</p><h2>Data quality</h2></div>
+                </div>
+                <div style="display:grid;gap:12px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="color:var(--muted);min-width:60px;">Status</span>
+                        <div id="sc-reliability-badge">--</div>
+                    </div>
+                    <div>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                            <span style="color:var(--muted);">Confidence</span>
+                            <strong id="sc-reliability-score">--</strong>
+                        </div>
+                        <div class="progress-track"><span id="sc-reliability-bar" style="width:0%"></span></div>
+                    </div>
+                    <div id="sc-reliability-label" style="color:var(--muted);font-size:0.88rem;">--</div>
+                    <div id="sc-warnings-list" style="display:grid;gap:4px;"></div>
+                </div>
+            </article>
+
+            <article class="panel wide-panel" id="sc-error-panel" hidden style="border-color:#efbbb3;background:var(--red-soft);">
+                <div>
+                    <p style="margin:0 0 6px;font-weight:800;color:var(--red);">Error</p>
+                    <p id="sc-error-message" style="margin:0;color:var(--muted);font-size:0.9rem;">--</p>
+                </div>
+            </article>
+
+        </section>
+
+        <!-- Section 2: Historical Replay Simulator -->
+        <section class="analytics-grid">
+            <article class="panel wide-panel">
+                <div class="panel-header">
+                    <div><p class="kicker">Replay Lab</p><h2>Historical session simulation</h2></div>
+                    <span class="status-pill neutral" id="replay-status-pill">Idle</span>
+                </div>
+
+                <div class="control-grid" style="margin-bottom:16px;">
+                    <label class="field"><span>Replay Date</span>
+                        <input type="date" id="replay-date">
+                    </label>
+                    <label class="field"><span>Speed</span>
+                        <select id="replay-speed">
+                            <option value="1">1x (real-time)</option>
+                            <option value="5">5x</option>
+                            <option value="10" selected>10x</option>
+                            <option value="30">30x</option>
+                            <option value="60">60x</option>
+                            <option value="120">120x</option>
+                        </select>
+                    </label>
+                    <div style="display:flex;align-items:flex-end;gap:8px;">
+                        <button class="primary-button" id="replay-start-btn" type="button">Start</button>
+                        <button class="quiet-button" id="replay-stop-btn" type="button" disabled>Stop</button>
+                    </div>
+                </div>
+
+                <div id="replay-progress-wrap" style="display:none;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:0.85rem;">
+                        <span style="color:var(--muted);">Sim time</span><strong id="replay-sim-time">--</strong>
+                        <span style="color:var(--muted);">Ticks</span><strong id="replay-ticks">--</strong>
+                        <span style="color:var(--muted);">Speed</span><strong id="replay-speed-display">--</strong>
+                    </div>
+                    <div class="progress-track"><span id="replay-progress-bar" style="width:0%"></span></div>
+                </div>
+
+                <div id="replay-error" style="display:none;color:var(--red);font-size:0.88rem;margin-top:8px;"></div>
+            </article>
+        </section>
+
+    </main>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    // ----------------------------------------------------------------
+    // Sense Check  POST /api/test-harness/theta-delta-sense-check
+    // ----------------------------------------------------------------
+    (function senseCheck() {
+        var form    = document.getElementById('sense-check-form');
+        var runBtn  = document.getElementById('sc-run-btn');
+        var loading = document.getElementById('sc-loading');
+
+        var RESULT_IDS = ['sc-delta-panel','sc-theta-panel','sc-signal-panel','sc-reliability-panel','sc-error-panel'];
+
+        function hideAll() {
+            RESULT_IDS.forEach(function(id) {
+                var n = document.getElementById(id);
+                if (n) n.hidden = true;
+            });
+        }
+
+        function showError(msg) {
+            hideAll();
+            var n = document.getElementById('sc-error-message');
+            if (n) n.textContent = msg;
+            var p = document.getElementById('sc-error-panel');
+            if (p) p.hidden = false;
+        }
+
+        function fmtN(val, dec) {
+            if (val == null || isNaN(parseFloat(val))) return 'N/A';
+            return parseFloat(val).toFixed(dec == null ? 2 : dec);
+        }
+
+        function statusClass(s) {
+            if (!s) return 'neutral';
+            if (s === 'NORMAL') return 'good';
+            if (s === 'HIGH' || s === 'LOW') return 'warn';
+            if (s === 'VERY_HIGH' || s === 'VERY_LOW') return 'danger';
+            return 'neutral';
+        }
+
+        function signalClass(color) {
+            if (!color) return 'neutral';
+            if (color === 'GREEN')  return 'good';
+            if (color === 'YELLOW') return 'warn';
+            if (color === 'RED')    return 'danger';
+            return 'neutral';
+        }
+
+        function setText(id, v) {
+            var n = document.getElementById(id);
+            if (n) n.textContent = v;
+        }
+
+        function setInner(id, v) {
+            var n = document.getElementById(id);
+            if (n) n.innerHTML = v;
+        }
+
+        function displayResults(r) {
+            hideAll();
+            var calc = r.calculation || {};
+            var sig  = r.signal      || {};
+            var rel  = r.reliability || {};
+
+            // Delta panel
+            setText('sc-observed-delta',  fmtN(calc.observedDeltaClamped, 4));
+            setText('sc-historical-delta', calc.averageHistoricalDelta != null ? fmtN(calc.averageHistoricalDelta, 4) : 'N/A');
+            setText('sc-delta-deviation',  calc.deltaDeviationPct != null ? fmtN(calc.deltaDeviationPct, 1) + '%' : 'N/A');
+            setInner('sc-delta-status-pill', '<span class="status-pill ' + statusClass(calc.deltaStatus) + '">' + (calc.deltaStatus || '--') + '</span>');
+            document.getElementById('sc-delta-panel').hidden = false;
+
+            // Theta panel
+            setText('sc-theta-benefit',    fmtN(calc.thetaBenefitPerMin, 4));
+            setText('sc-historical-theta', calc.averageThetaBenefitPerMin != null ? fmtN(calc.averageThetaBenefitPerMin, 4) : 'N/A');
+            setText('sc-theta-deviation',  calc.thetaDeviationPct != null ? fmtN(calc.thetaDeviationPct, 1) + '%' : 'N/A');
+            setInner('sc-theta-status-pill', '<span class="status-pill ' + statusClass(calc.thetaStatus) + '">' + (calc.thetaStatus || '--') + '</span>');
+            document.getElementById('sc-theta-panel').hidden = false;
+
+            // Signal panel
+            var sigPill = document.getElementById('sc-signal-pill');
+            if (sigPill) {
+                sigPill.textContent = sig.opportunitySignal || '--';
+                sigPill.className   = 'status-pill ' + signalClass(sig.color);
+            }
+            setText('sc-signal-label',  sig.label  || '--');
+            setText('sc-signal-reason', sig.reason || '--');
+            document.getElementById('sc-signal-panel').hidden = false;
+
+            // Reliability panel
+            setInner('sc-reliability-badge', '<span class="status-pill ' + (rel.isReliable ? 'good' : 'warn') + '">' + (rel.isReliable ? 'Reliable' : 'Caution') + '</span>');
+            setText('sc-reliability-score', (rel.reliabilityScore || 0) + ' / 100');
+            var bar = document.getElementById('sc-reliability-bar');
+            if (bar) bar.style.width = (rel.reliabilityScore || 0) + '%';
+            setText('sc-reliability-label', rel.reliabilityLabel || '--');
+            var wList = document.getElementById('sc-warnings-list');
+            if (wList) {
+                if (rel.warnings && rel.warnings.length) {
+                    wList.innerHTML = rel.warnings.map(function(w) {
+                        return '<div style="font-size:0.83rem;color:var(--muted);padding:5px 0;border-top:1px solid rgba(0,0,0,0.07);">- ' + w + '</div>';
+                    }).join('');
+                } else {
+                    wList.innerHTML = '<div style="font-size:0.83rem;color:var(--muted);">No warnings</div>';
+                }
+            }
+            document.getElementById('sc-reliability-panel').hidden = false;
+        }
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            hideAll();
+            runBtn.disabled = true;
+            loading.hidden  = false;
+
+            var body = new URLSearchParams({
+                underlying:        document.getElementById('sc-underlying').value,
+                expiry:            document.getElementById('sc-expiry').value,
+                strike:            document.getElementById('sc-strike').value,
+                optionType:        document.getElementById('sc-option-type').value,
+                side:              document.getElementById('sc-side').value,
+                entryPremium:      document.getElementById('sc-entry-premium').value,
+                currentPremium:    document.getElementById('sc-current-premium').value,
+                entryUnderlying:   document.getElementById('sc-entry-underlying').value,
+                currentUnderlying: document.getElementById('sc-current-underlying').value,
+                elapsedMinutes:    document.getElementById('sc-elapsed').value
+            });
+
+            fetch('/api/test-harness/theta-delta-sense-check', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body:    body.toString()
+            })
+            .then(function(res) {
+                if (!res.ok) {
+                    return res.text().then(function(txt) {
+                        throw new Error('HTTP ' + res.status + ': ' + (txt || 'Unknown error'));
+                    });
+                }
+                return res.json();
+            })
+            .then(function(data) { displayResults(data); })
+            .catch(function(err) { showError(err.message || 'Network error - check backend connection.'); })
+            .finally(function() {
+                runBtn.disabled = false;
+                loading.hidden  = true;
+            });
+        });
+    }());
+
+    // ----------------------------------------------------------------
+    // Replay  POST /api/simulation/start|stop   GET /api/simulation/status
+    // ----------------------------------------------------------------
+    (function replay() {
+        var startBtn     = document.getElementById('replay-start-btn');
+        var stopBtn      = document.getElementById('replay-stop-btn');
+        var headerBtn    = document.getElementById('btn-header-replay');
+        var dateInput    = document.getElementById('replay-date');
+        var speedSelect  = document.getElementById('replay-speed');
+        var statusPill   = document.getElementById('replay-status-pill');
+        var progressWrap = document.getElementById('replay-progress-wrap');
+        var progressBar  = document.getElementById('replay-progress-bar');
+        var simTimeEl    = document.getElementById('replay-sim-time');
+        var ticksEl      = document.getElementById('replay-ticks');
+        var speedDisplay = document.getElementById('replay-speed-display');
+        var errorEl      = document.getElementById('replay-error');
+        var sessionState = document.getElementById('replay-session-state');
+
+        var pollTimer = null;
+
+        // Default date to yesterday
+        var yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        dateInput.value = yesterday.toISOString().slice(0, 10);
+
+        function setError(msg) {
+            errorEl.textContent   = msg || '';
+            errorEl.style.display = msg ? 'block' : 'none';
+        }
+
+        function applyStatus(s) {
+            setError('');
+            if (s.active) {
+                statusPill.className   = 'status-pill good';
+                statusPill.textContent = 'Running';
+                if (sessionState) sessionState.textContent = 'Running';
+                startBtn.disabled  = true;
+                stopBtn.disabled   = false;
+                if (headerBtn) headerBtn.disabled = true;
+                progressWrap.style.display = 'block';
+                simTimeEl.textContent    = s.replayTimeIst || '--';
+                speedDisplay.textContent = (s.speed || 1) + 'x';
+                var pct = s.totalTicks > 0 ? Math.round((s.ticksReplayed / s.totalTicks) * 100) : 0;
+                ticksEl.textContent      = s.ticksReplayed + ' / ' + s.totalTicks;
+                progressBar.style.width  = pct + '%';
+            } else {
+                statusPill.className   = 'status-pill neutral';
+                statusPill.textContent = 'Idle';
+                if (sessionState) sessionState.textContent = 'Idle';
+                startBtn.disabled  = false;
+                stopBtn.disabled   = true;
+                if (headerBtn) headerBtn.disabled = false;
+                progressWrap.style.display = 'none';
+                stopPoll();
+            }
+        }
+
+        function fetchStatus() {
+            fetch('/api/simulation/status')
+                .then(function(r) { if (r.ok) return r.json(); })
+                .then(function(data) { if (data) applyStatus(data); })
+                .catch(function() {});
+        }
+
+        function startPoll() { stopPoll(); pollTimer = setInterval(fetchStatus, 2000); }
+        function stopPoll()  { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+        function startReplay() {
+            var date = dateInput.value;
+            if (!date) { setError('Please select a replay date.'); return; }
+            var speed = parseInt(speedSelect.value, 10);
+            setError('');
+            startBtn.disabled = true;
+            if (headerBtn) headerBtn.disabled = true;
+            statusPill.className   = 'status-pill warn';
+            statusPill.textContent = 'Starting...';
+
+            var body = new URLSearchParams({ date: date, speed: String(speed) });
+            fetch('/api/simulation/start', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body:    body.toString()
+            })
+            .then(function(r) {
+                return r.json().then(function(json) {
+                    if (!r.ok) {
+                        setError(json.error || ('HTTP ' + r.status));
+                        startBtn.disabled = false;
+                        if (headerBtn) headerBtn.disabled = false;
+                        statusPill.className   = 'status-pill neutral';
+                        statusPill.textContent = 'Idle';
+                        return;
+                    }
+                    applyStatus(json);
+                    startPoll();
+                });
+            })
+            .catch(function(err) {
+                setError(err.message || 'Network error');
+                startBtn.disabled = false;
+                if (headerBtn) headerBtn.disabled = false;
+                statusPill.className   = 'status-pill neutral';
+                statusPill.textContent = 'Idle';
+            });
+        }
+
+        function stopReplay() {
+            stopBtn.disabled = true;
+            fetch('/api/simulation/stop', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(json) { applyStatus(json); })
+                .catch(function(err) {
+                    setError(err.message || 'Network error');
+                    stopBtn.disabled = false;
+                });
+        }
+
+        startBtn.addEventListener('click', startReplay);
+        stopBtn.addEventListener('click', stopReplay);
+        if (headerBtn) {
+            headerBtn.addEventListener('click', function() {
+                document.getElementById('replay-start-btn').closest('section').scrollIntoView({ behavior: 'smooth' });
+                startReplay();
+            });
+        }
+
+        // Sync state on load
+        fetchStatus();
+    }());
+
+}());
+</script>
+</body>
+</html>

@@ -20,22 +20,31 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Polls the Kite Connect REST {@code /quote} API every 2 seconds for all subscribed
+ * Polls the Kite Connect REST {@code /quote} API every second for all subscribed
  * instruments and feeds ticks into the live ingestion pipeline.
  *
  * <p>Replaces WebSocket (which requires the Kite SDK jar) with standard
  * {@link java.net.http.HttpClient} — no external dependencies beyond Gson.
  *
- * <p>Reliability model:
+ * <h2>Subscription model (Phase 3 scope-first)</h2>
+ * The subscribed instrument set is now owned by a {@link KiteSubscriptionManager}.
+ * The session holds a reference to the manager and calls {@link KiteSubscriptionManager#snapshot()}
+ * once per poll cycle. This means:
+ * <ul>
+ *   <li>The quote-key list and the key-to-id map are always consistent within a cycle.</li>
+ *   <li>A scope swap ({@link KiteSubscriptionManager#bind}) takes effect on the
+ *       next poll without restarting the poller.</li>
+ *   <li>The session no longer owns the subscription list; it only owns the polling schedule.</li>
+ * </ul>
+ *
+ * <h2>Reliability model</h2>
  * <ul>
  *   <li>HTTP errors → log + retry next poll cycle (no crash)</li>
  *   <li>No response for 30s → status = STALE</li>
@@ -50,18 +59,18 @@ public final class KiteTickerSession {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final LocalTime MARKET_OPEN = LocalTime.of(9, 0);
     private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 35);
-    private static final int POLL_INTERVAL_SECONDS = 2;
+    private static final int POLL_INTERVAL_SECONDS = 1;
     private static final int STALE_THRESHOLD_SECONDS = 30;
     private static final int CHUNK_SIZE = 500; // Kite max instruments per /quote call
 
     private final KiteLiveConfig config;
+    private final KiteSubscriptionManager subscriptionManager;
     private final KiteTickerAdapter adapter;
     private final KiteLiveIngestionJob ingestionJob;
     private final LiveSessionState sessionState;
     private final Live15mAggregator aggregator;
     private final HttpClient httpClient;
     private final Gson gson;
-    private final List<String> quoteKeys; // e.g. ["NSE:NIFTY 50", "NFO:NIFTY26APR22500CE", ...]
     private final String jdbcUrl;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
@@ -69,46 +78,62 @@ public final class KiteTickerSession {
 
     private volatile boolean shutdown = false;
 
+    /**
+     * Creates a session backed by a {@link KiteSubscriptionManager}.
+     *
+     * <p>The session starts with whatever instruments are currently bound in
+     * {@code subscriptionManager}. The subscription can be swapped at any time
+     * by calling {@link KiteSubscriptionManager#bind} or {@link KiteSubscriptionManager#unbindAll}
+     * from another thread; the change takes effect on the next poll cycle.
+     *
+     * @param config              Kite credentials and configuration
+     * @param subscriptionManager source of truth for the subscribed instrument set
+     * @param sessionState        shared live session state (status, last tick, etc.)
+     * @param aggregator          15-minute aggregator for flush-on-shutdown
+     * @param jdbcUrl             QuestDB JDBC URL for ingestion writes
+     */
     public KiteTickerSession(
             KiteLiveConfig config,
-            List<KiteInstrumentRecord> instruments,
-            Map<Long, String> tokenToInstrumentId,
+            KiteSubscriptionManager subscriptionManager,
             LiveSessionState sessionState,
             Live15mAggregator aggregator,
             String jdbcUrl
     ) {
-        this.config = Objects.requireNonNull(config);
-        this.sessionState = Objects.requireNonNull(sessionState);
-        this.aggregator = Objects.requireNonNull(aggregator);
-        this.jdbcUrl = Objects.requireNonNull(jdbcUrl);
+        this.config              = Objects.requireNonNull(config);
+        this.subscriptionManager = Objects.requireNonNull(subscriptionManager);
+        this.sessionState        = Objects.requireNonNull(sessionState);
+        this.aggregator          = Objects.requireNonNull(aggregator);
+        this.jdbcUrl             = Objects.requireNonNull(jdbcUrl);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         this.gson = new Gson();
 
-        // Build quoteKey → instrumentId map and quoteKeys list
-        Map<String, String> quoteKeyToId = buildQuoteKeyMap(instruments, tokenToInstrumentId);
-        this.quoteKeys = buildQuoteKeyList(instruments);
-        sessionState.setSubscribedInstruments(quoteKeys.size());
+        this.adapter     = new KiteTickerAdapter(sessionState);
+        this.ingestionJob = new KiteLiveIngestionJob(aggregator, sessionState, jdbcUrl);
 
-        this.adapter = new KiteTickerAdapter(quoteKeyToId, sessionState);
-        this.ingestionJob = new KiteLiveIngestionJob(aggregator);
+        // Initialise subscribed-instrument count in session state
+        sessionState.setSubscribedInstruments(subscriptionManager.snapshot().totalCount());
     }
 
     /** Starts the polling scheduler. Returns immediately; polling runs on a background thread. */
     public void connect() {
-        if (!isMarketHours()) {
-            System.out.println("[kite-poller] Outside market hours — not starting.");
-            return;
-        }
         sessionState.setStatus(LiveSessionState.Status.CONNECTING);
-        scheduler.scheduleAtFixedRate(this::poll, 0, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        // Always fetch prices once immediately so the UI shows last-traded prices on startup,
+        // even outside market hours (prices will be static closing LTPs).
+        scheduler.schedule(this::pollUnguarded, 1, TimeUnit.SECONDS);
+        // Continuous polling at 1s cadence — poll() itself only runs during market hours
+        // to avoid hammering the Kite API and exhausting JVM heap outside 09:00–15:35 IST.
+        scheduler.scheduleAtFixedRate(this::poll, 5, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(this::checkStaleness, 15, 15, TimeUnit.SECONDS);
         System.out.printf("[kite-poller] Started polling %d instruments every %ds%n",
-                quoteKeys.size(), POLL_INTERVAL_SECONDS);
+                subscriptionManager.snapshot().totalCount(), POLL_INTERVAL_SECONDS);
+        if (!isMarketHours()) {
+            System.out.println("[kite-poller] Outside market hours — prices seeded once; continuous polling resumes at 09:00 IST.");
+        }
     }
 
-    /** Graceful shutdown. */
+    /** Graceful shutdown. Flushes any in-progress 15m buckets to QuestDB. */
     public void shutdown() {
         shutdown = true;
         scheduler.shutdownNow();
@@ -124,16 +149,34 @@ public final class KiteTickerSession {
 
     // ── polling ─────────────────────────────────────────────────────────────
 
+    /** Market-hours-guarded poll — runs only during 09:00–15:35 IST. */
     private void poll() {
         if (shutdown || !isMarketHours()) return;
+        doPoll();
+    }
+
+    /** One-shot unguarded poll — used at startup to seed UI prices regardless of time. */
+    private void pollUnguarded() {
+        if (shutdown) return;
+        doPoll();
+    }
+
+    private void doPoll() {
         try {
+            // Take a single atomic snapshot for this poll cycle.
+            // Both quoteKeys and quoteKeyToId are consistent within the snapshot.
+            KiteSubscriptionManager.Subscription sub = subscriptionManager.snapshot();
+
+            // Update session state with the current subscription size
+            sessionState.setSubscribedInstruments(sub.totalCount());
+
             // Chunk into batches of CHUNK_SIZE to respect Kite limits
-            List<List<String>> chunks = chunk(quoteKeys, CHUNK_SIZE);
-            for (List<String> chunk : chunks) {
-                String url = buildUrl(chunk);
+            List<List<String>> chunks = chunk(sub.quoteKeys(), CHUNK_SIZE);
+            for (List<String> chunkKeys : chunks) {
+                String url = buildUrl(chunkKeys);
                 String body = fetch(url);
                 if (body == null) continue;
-                processResponse(body);
+                processResponse(body, sub);
             }
         } catch (Exception ex) {
             System.err.println("[kite-poller] Poll error: " + ex.getMessage());
@@ -172,20 +215,32 @@ public final class KiteTickerSession {
         return null;
     }
 
-    private void processResponse(String body) {
+    private void processResponse(String body, KiteSubscriptionManager.Subscription sub) {
         try {
             JsonObject root = gson.fromJson(body, JsonObject.class);
             if (root == null || !root.has("data")) return;
             JsonObject data = root.getAsJsonObject("data");
-            KiteTickerAdapter.AdaptedTicks adapted = adapter.adapt(data);
+            // Pass the snapshot's quoteKeyToId map so adapter never sees a hybrid state
+            KiteTickerAdapter.AdaptedTicks adapted = adapter.adapt(data, sub.quoteKeyToId());
             if (adapted.isEmpty()) return;
 
-            try (Connection conn = QuestDbConnectionFactory.open(jdbcUrl)) {
-                ingestionJob.ingest(conn, adapted.optionTicks(), adapted.spotTicks(),
-                        LocalDate.now(IST));
-            } catch (SQLException ex) {
-                System.err.println("[kite-poller] DB write failed: " + ex.getMessage());
+            // Retry up to 3 times on transient connection failures (e.g. QuestDB not yet ready)
+            SQLException lastEx = null;
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                try (Connection conn = QuestDbConnectionFactory.open(jdbcUrl)) {
+                    ingestionJob.ingest(conn, adapted.optionTicks(), adapted.spotTicks(),
+                            LocalDate.now(IST));
+                    return; // success
+                } catch (SQLException ex) {
+                    lastEx = ex;
+                    if (attempt < 3) {
+                        try { Thread.sleep(200L * attempt); } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt(); return;
+                        }
+                    }
+                }
             }
+            System.err.println("[kite-poller] DB write failed after 3 attempts: " + lastEx.getMessage());
         } catch (Exception ex) {
             System.err.println("[kite-poller] Response parse error: " + ex.getMessage());
         }
@@ -208,34 +263,15 @@ public final class KiteTickerSession {
         StringBuilder sb = new StringBuilder(QUOTE_URL).append('?');
         for (int i = 0; i < keys.size(); i++) {
             if (i > 0) sb.append('&');
-            sb.append("i=").append(URLEncoder.encode(keys.get(i), StandardCharsets.UTF_8));
+            // Use %20 for spaces (RFC 3986 percent-encoding), not + (form encoding).
+            // Kite's /quote API requires %20; + causes silent key mismatch in the response.
+            sb.append("i=").append(URLEncoder.encode(keys.get(i), StandardCharsets.UTF_8)
+                    .replace("+", "%20"));
         }
         return sb.toString();
     }
 
-    // ── instrument key helpers ────────────────────────────────────────────────
-
-    private static Map<String, String> buildQuoteKeyMap(
-            List<KiteInstrumentRecord> instruments, Map<Long, String> tokenToId) {
-        Map<String, String> map = new HashMap<>(instruments.size() * 2 + 4);
-        for (KiteInstrumentRecord rec : instruments) {
-            String instrumentId = tokenToId.get(rec.instrumentToken());
-            if (instrumentId != null) {
-                map.put("NFO:" + rec.tradingSymbol(), instrumentId);
-            }
-        }
-        return map;
-    }
-
-    private static List<String> buildQuoteKeyList(List<KiteInstrumentRecord> instruments) {
-        List<String> keys = new ArrayList<>(instruments.size() + 2);
-        keys.add(KiteTickerAdapter.NIFTY_QUOTE_KEY);
-        keys.add(KiteTickerAdapter.BANKNIFTY_QUOTE_KEY);
-        for (KiteInstrumentRecord rec : instruments) {
-            keys.add("NFO:" + rec.tradingSymbol());
-        }
-        return keys;
-    }
+    // ── utility ──────────────────────────────────────────────────────────────
 
     private static <T> List<List<T>> chunk(List<T> list, int size) {
         List<List<T>> chunks = new ArrayList<>();

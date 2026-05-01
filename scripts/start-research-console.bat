@@ -31,13 +31,13 @@ if errorlevel 1 goto :ErrorKitePropsField
 call :RequireProperty "%KITE_PROPS%" "kite.user.id"
 if errorlevel 1 goto :ErrorKitePropsField
 
-echo [info] Compiling backend...
-call mvn -q -DskipTests compile
+echo [info] Compiling backend (clean build)...
+call mvn -q -DskipTests clean compile
 if errorlevel 1 goto :ErrorBuild
 
 echo [info] Starting live research backend with daily login flow...
 del /q "%LOG_FILE%" >nul 2>&1
-start "StrategySquad-ResearchConsole-%PORT%" cmd /c "cd /d ""%PROJECT_ROOT%"" && mvn -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain >> ""%LOG_FILE%"" 2>&1"
+start "StrategySquad-ResearchConsole-%PORT%" cmd /c "cd /d ""%PROJECT_ROOT%"" && set MAVEN_OPTS=-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=25.0 -XX:+UseG1GC && mvn -q -DskipTests org.codehaus.mojo:exec-maven-plugin:3.5.0:java -Dexec.mainClass=com.strategysquad.ingestion.kite.KiteLiveConsoleMain >> ""%LOG_FILE%"" 2>&1"
 
 call :WaitForReady "%PORT%" "300"
 if errorlevel 1 goto :ErrorTimeout

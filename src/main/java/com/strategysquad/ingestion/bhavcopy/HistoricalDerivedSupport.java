@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Calendar;
+import java.util.TimeZone;
 
 final class HistoricalDerivedSupport {
     private static final ZoneOffset IST_OFFSET = ZoneOffset.ofHoursMinutes(5, 30);
@@ -47,7 +49,7 @@ final class HistoricalDerivedSupport {
                     String underlying = rs.getString("underlying");
                     String optionType = rs.getString("option_type");
                     BigDecimal strike = BigDecimal.valueOf(rs.getDouble("strike"));
-                    Instant expiryTs = rs.getTimestamp("expiry_date").toInstant();
+                    Instant expiryTs = rs.getTimestamp("expiry_date", Calendar.getInstance(TimeZone.getTimeZone("UTC"))).toInstant();
                     BigDecimal lastPrice = BigDecimal.valueOf(rs.getDouble("close_price"));
                     BigDecimal spotPrice = BigDecimal.valueOf(rs.getDouble("spot_close"));
                     long volume = rs.getLong("volume");

@@ -534,6 +534,68 @@ If unsure:
 
 ---
 
+# 16. AGENTIC OUTPUT TYPE CONTRACTS
+
+These rules govern the five new output types introduced by the agentic decision loop.
+They carry the same weight as the payoff invariants above. Violations are incorrect by definition.
+
+## 16.1 CandidateOpportunity
+
+- All price fields (`last_price`, `bid_price`, `ask_price`, `historical_avg_price`) are in **index points**, never rupees.
+- `premium_richness_points` = `last_price − historical_avg_price`. Positive = rich (option more expensive than history). Negative = cheap.
+- `premium_richness_pct` = `(last_price − historical_avg_price) / historical_avg_price × 100`. Units: percent.
+- `moneyness_points` = `strike − underlying_price`. Positive for OTM CE and ITM PE. Negative for ITM CE and OTM PE.
+- `total_score` is dimensionless, range [0, 1]. Higher = more attractive short candidate.
+- `disqualifier_reason` is always `Optional<String>`. Never null. Empty = not disqualified.
+- A disqualified candidate must not be used as an `ENTER` target by the Decision Agent.
+- All scores must be trader-readable in reports: never show raw component weights as UI labels.
+
+## 16.2 SignalSnapshot
+
+- `empirical_delta_*` is dimensionless (option price change / underlying price change). Sign: positive for CE, negative for PE under normal conditions.
+- `delta_adjusted_theta_2m` is in **index points**. Positive value for a short leg = option price fell more than expected → theta benefit realised.
+- `theta_progress_ratio` is dimensionless, range [0, 1]. Computed as: `(entry_price − current_price) / entry_price` for a short leg. Never exceeds 1.0.
+- `expected_decay_since_entry` is in **index points**. Always positive for a short leg with any time passage.
+- `theta_state` enum values map to trader-readable labels: `PROFIT_BOOK` → "Theta captured — consider booking", `HOLD` → "Theta accruing — hold", `DEFENSIVE_EXIT` → "Premium expanding — consider exit".
+- `stale = true` must suppress all agent decisions except `BLOCK_NEW_ENTRY` or `HALT_SESSION` from the Risk Guard.
+
+## 16.3 DecisionCommand
+
+- `command_type` must always be one of the nine allowed values. No free-form command types.
+- `reason_code` is machine-readable, snake_case, e.g. `PREMIUM_RICH_LOW_DELTA`. Never empty.
+- `explanation` is trader-readable plain English. Never a Java field name. Never empty.
+- `selected_candidate_ids` is empty list (not null) for non-entry commands.
+- `overridden_by_risk_guard = true` must accompany every command where the Risk Guard changed the policy output.
+- A `DecisionCommand` with `overridden_by_risk_guard = true` must carry the Risk Guard's `triggered_conditions` in its audit record.
+- Commands in `SIMULATION` or `PAPER` mode must never mutate live Kite positions.
+
+## 16.4 PositionPlan
+
+- All price fields (`entry_price`, `estimated_total_premium`) are in **index points per lot**, not rupees.
+- `estimated_net_delta` is dimensionless. Target range for entry: −0.10 to +0.10.
+- `lot_count_per_leg` must never exceed `max_lot_cap / number_of_legs`.
+- `structure_type` must be one of: `SHORT_STRADDLE`, `SHORT_STRANGLE`. No other types in Phase 3.
+- A rejected plan (`risk_guard_approved = false`) must have a non-empty `rejection_reason`.
+- A rejected plan must never reach `PositionSessionActionService`.
+- Lot sizes must always be read from `instrument_master`, never hard-coded.
+
+## 16.5 RiskGuardSnapshot
+
+- `net_delta` is dimensionless. Critical threshold (configurable, default ±0.30) triggers `FORCE_REDUCE`.
+- `live_pnl` is in **index points** (not rupees, not percent). Negative = unrealised loss.
+- `triggered_conditions` is a `List<String>` of machine-readable condition codes, never null. Empty list = `ALLOW`.
+- `explanation` must be trader-readable and must name the specific condition that triggered the guard decision.
+- `HALT_SESSION` is only emitted for: churn detected, manual operator halt, or critical system failure. It is not a routine stop.
+- Risk Guard decisions escalate monotonically within a single evaluation: `ALLOW < WARN < BLOCK_NEW_ENTRY < FORCE_REDUCE < FORCE_EXIT < HALT_SESSION`. If multiple conditions are active, the highest severity wins.
+
+---
+
+# FINAL RULE
+
+> A metric that is mathematically correct but trader-misleading is incorrect.
+
+---
+
 # Copilot Prefix
 
 ```text

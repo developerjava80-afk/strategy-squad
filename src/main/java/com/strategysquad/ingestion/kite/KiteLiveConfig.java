@@ -21,6 +21,10 @@ public final class KiteLiveConfig {
     private final int tickBufferMaxSize;
     private final String jdbcUrl;
     private final int consolePort;
+    // Phase 7 — scope guardrail caps (configurable via kite.properties)
+    private final int scopeMaxSubscribedTokens;
+    private final int scopeMaxStrikesPerExpiry;
+    private final int scopeMaxCandidates;
 
     private KiteLiveConfig(
             String apiKey,
@@ -34,7 +38,10 @@ public final class KiteLiveConfig {
             int tickBufferMs,
             int tickBufferMaxSize,
             String jdbcUrl,
-            int consolePort
+            int consolePort,
+            int scopeMaxSubscribedTokens,
+            int scopeMaxStrikesPerExpiry,
+            int scopeMaxCandidates
     ) {
         this.apiKey = apiKey;
         this.apiSecret = apiSecret;
@@ -48,6 +55,9 @@ public final class KiteLiveConfig {
         this.tickBufferMaxSize = tickBufferMaxSize;
         this.jdbcUrl = jdbcUrl;
         this.consolePort = consolePort;
+        this.scopeMaxSubscribedTokens = scopeMaxSubscribedTokens;
+        this.scopeMaxStrikesPerExpiry = scopeMaxStrikesPerExpiry;
+        this.scopeMaxCandidates = scopeMaxCandidates;
     }
 
     public static KiteLiveConfig loadFromFile(Path propertiesFile) throws IOException {
@@ -64,7 +74,10 @@ public final class KiteLiveConfig {
                 parseInt(props, "kite.tick.buffer.ms", 200),
                 parseInt(props, "kite.tick.buffer.max.size", 50),
                 KiteCredentialsLoader.optional(props, "kite.jdbc.url", "jdbc:postgresql://localhost:8812/qdb"),
-                parseInt(props, "kite.console.port", 8080)
+                parseInt(props, "kite.console.port", 8080),
+                parseInt(props, "scope.max.subscribed.tokens", 250),
+                parseInt(props, "scope.max.strikes.per.expiry", 100),
+                parseInt(props, "scope.max.candidates", 100)
         );
     }
 
@@ -77,10 +90,10 @@ public final class KiteLiveConfig {
 
     public KiteLiveConfig withAccessToken(String newAccessToken) {
         return new KiteLiveConfig(
-            apiKey,
-            apiSecret,
-            newAccessToken,
-            userId,
+                apiKey,
+                apiSecret,
+                newAccessToken,
+                userId,
                 niftyStrikeWindowPoints,
                 bankNiftyStrikeWindowPoints,
                 subscribeNextWeekly,
@@ -88,7 +101,10 @@ public final class KiteLiveConfig {
                 tickBufferMs,
                 tickBufferMaxSize,
                 jdbcUrl,
-                consolePort
+                consolePort,
+                scopeMaxSubscribedTokens,
+                scopeMaxStrikesPerExpiry,
+                scopeMaxCandidates
         );
     }
 
@@ -104,6 +120,9 @@ public final class KiteLiveConfig {
     public int tickBufferMaxSize() { return tickBufferMaxSize; }
     public String jdbcUrl() { return jdbcUrl; }
     public int consolePort() { return consolePort; }
+    public int scopeMaxSubscribedTokens() { return scopeMaxSubscribedTokens; }
+    public int scopeMaxStrikesPerExpiry() { return scopeMaxStrikesPerExpiry; }
+    public int scopeMaxCandidates() { return scopeMaxCandidates; }
 
     private static double parseDouble(Properties props, String key, double defaultValue) {
         String v = props.getProperty(key);

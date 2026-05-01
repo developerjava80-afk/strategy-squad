@@ -1,0 +1,511 @@
+Picked up JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.strategysquad:strategy-squad >------------------
+[INFO] Building Strategy Squad 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ strategy-squad ---
+[INFO] skip non existing resourceDirectory c:\Users\shiva\OptionAlpha\strategy-squad\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ strategy-squad ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ strategy-squad ---
+[INFO] skip non existing resourceDirectory c:\Users\shiva\OptionAlpha\strategy-squad\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ strategy-squad ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ strategy-squad ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+Picked up JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+[INFO] Running com.strategysquad.agentic.booking.ProfitBookingAgentTest
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] FULL booking applied | session=test-session-001 | ratio=0.92 | livePnl=5000.0
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] Booking suppressed — risk=FORCE_EXIT
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] PARTIAL booking applied | session=test-session-001 | ratio=0.8 | livePnl=2000.0
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] Booking suppressed — risk=FORCE_REDUCE
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] PARTIAL booking applied | session=test-session-001 | ratio=0.88 | livePnl=500.0
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] PARTIAL booking applied | session=test-session-001 | ratio=0.8 | livePnl=500.0
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] Booking suppressed — risk=BLOCK_NEW_ENTRY
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] FULL booking applied | session=test-session-001 | ratio=0.92 | livePnl=800.0
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] Booking suppressed — risk=HALT_SESSION
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.booking.ProfitBookingAgent tryBook
+INFO: [ProfitBookingAgent] PARTIAL booking applied | session=test-session-001 | ratio=0.8 | livePnl=500.0
+[ERROR] Tests run: 14, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.524 s <<< FAILURE! -- in com.strategysquad.agentic.booking.ProfitBookingAgentTest
+[ERROR] com.strategysquad.agentic.booking.ProfitBookingAgentTest.bookedPnl_correctAfterFullBooking -- Time elapsed: 0.312 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Total booked PnL must equal sum of (entry-exit)*qty for full booking ==> expected: <12350> but was: <12350.0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1156)
+	at com.strategysquad.agentic.booking.ProfitBookingAgentTest.bookedPnl_correctAfterFullBooking(ProfitBookingAgentTest.java:259)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.strategysquad.agentic.booking.ProfitBookingAgentTest.bookedPnl_correctAfterPartialBooking -- Time elapsed: 0.012 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Total booked PnL must equal sum of (entry-exit)*qty per leg ==> expected: <5200> but was: <5200.0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1156)
+	at com.strategysquad.agentic.booking.ProfitBookingAgentTest.bookedPnl_correctAfterPartialBooking(ProfitBookingAgentTest.java:219)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[INFO] Running com.strategysquad.agentic.builder.PositionBuilderAgentTest
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24800 | netDelta=0.0 | totalPremium=12870.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Strike 24800 rejected: |netDelta|=0.30000000000000004 exceeds threshold 0.15
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24800 | netDelta=0.009999999999999995 | totalPremium=19175.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24800 | netDelta=0.0 | totalPremium=19175.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for BANKNIFTY at strike 52000 | netDelta=0.0 | totalPremium=11850.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+WARNING: [PositionBuilderAgent] No qualified candidates for NIFTY — returning rejected plan
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStrangle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRANGLE plan for NIFTY CE=25000 / PE=24500 | netDelta=0.009999999999999995 | totalPremium=10075.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+WARNING: [PositionBuilderAgent] No qualified candidates for NIFTY — returning rejected plan
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStrangle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRANGLE plan for NIFTY CE=25000 / PE=24500 | netDelta=0.009999999999999995 | totalPremium=10075.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Strike 24800 rejected: |netDelta|=0.30000000000000004 exceeds threshold 0.15
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24900 | netDelta=0.009999999999999995 | totalPremium=10270.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24800 | netDelta=0.010000000000000009 | totalPremium=19370.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+WARNING: [PositionBuilderAgent] No qualified candidates for NIFTY — returning rejected plan
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.115 s -- in com.strategysquad.agentic.builder.PositionBuilderAgentTest
+[INFO] Running com.strategysquad.agentic.decision.DecisionAuditWriterTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.092 s -- in com.strategysquad.agentic.decision.DecisionAuditWriterTest
+[INFO] Running com.strategysquad.agentic.decision.DecisionPolicyTest
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.070 s -- in com.strategysquad.agentic.decision.DecisionPolicyTest
+[INFO] Running com.strategysquad.agentic.Phase2ReplayTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.058 s -- in com.strategysquad.agentic.Phase2ReplayTest
+[INFO] Running com.strategysquad.agentic.Phase3EnterSessionTest
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.builder.PositionBuilderAgent buildShortStraddle
+INFO: [PositionBuilderAgent] Accepted SHORT_STRADDLE plan for NIFTY at strike 24800 | netDelta=0.009999999999999995 | totalPremium=18850.0 pts
+Apr 26, 2026 4:04:13 PM com.strategysquad.agentic.decision.DecisionAgent decide
+INFO: [DecisionAgent] Position session created: 3c65dcd9-09ee-4b87-bcb2-772ae02d250f for NIFTY (SHORT_STRADDLE)
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.strategysquad.agentic.Phase3EnterSessionTest
+[INFO] Running com.strategysquad.agentic.scanner.CandidateScoringEngineTest
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.074 s -- in com.strategysquad.agentic.scanner.CandidateScoringEngineTest
+[INFO] Running com.strategysquad.agentic.scanner.MorningScannerServiceTest
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604251030] — total=2 qualified=0 disqualified=2
+  top: none (all contracts disqualified)
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService scan
+INFO: MorningScannerService [202604251030] — no active weekly contracts found; returning empty candidate list
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604251030] — total=2 qualified=1 disqualified=1
+  top: INS_NIFTY_20260428_24800_CE score=0.6533
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604251030] — total=1 qualified=1 disqualified=0
+  top: INS_NIFTY_20260428_24800_CE score=0.6358
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604251030] — total=4 qualified=3 disqualified=1
+  top: INS_NIFTY_20260428_24800_CE score=0.8146
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.055 s -- in com.strategysquad.agentic.scanner.MorningScannerServiceTest
+[INFO] Running com.strategysquad.agentic.scanner.Phase1SmokeTest
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604280930] — total=2 qualified=1 disqualified=1
+  top: INS_NIFTY_20260501_24800_CE score=0.7264
+Apr 26, 2026 4:04:14 PM com.strategysquad.agentic.scanner.MorningScannerService logSummary
+INFO: MorningScannerService [202604280930] — total=2 qualified=2 disqualified=0
+  top: INS_NIFTY_20260501_24800_CE score=0.7264
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.strategysquad.agentic.scanner.Phase1SmokeTest
+[INFO] Running com.strategysquad.agentic.scanner.ScannerQueryTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.094 s -- in com.strategysquad.agentic.scanner.ScannerQueryTest
+[INFO] Running com.strategysquad.agentic.signal.SignalSnapshotServiceTest
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in com.strategysquad.agentic.signal.SignalSnapshotServiceTest
+[INFO] Running com.strategysquad.aggregation.ContextualAggregationJobTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in com.strategysquad.aggregation.ContextualAggregationJobTest
+[INFO] Running com.strategysquad.aggregation.Options15mBucketAggregatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.strategysquad.aggregation.Options15mBucketAggregatorTest
+[INFO] Running com.strategysquad.aggregation.Options15mBucketWriterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.strategysquad.aggregation.Options15mBucketWriterTest
+[INFO] Running com.strategysquad.aggregation.OptionsContextBucketAggregatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.strategysquad.aggregation.OptionsContextBucketAggregatorTest
+[INFO] Running com.strategysquad.aggregation.OptionsContextBucketWriterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.strategysquad.aggregation.OptionsContextBucketWriterTest
+[INFO] Running com.strategysquad.derived.PcrHistoricalAggregatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.strategysquad.derived.PcrHistoricalAggregatorTest
+[INFO] Running com.strategysquad.derived.PcrHistoricalWriterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.strategysquad.derived.PcrHistoricalWriterTest
+[INFO] Running com.strategysquad.enrichment.OptionsEnrichedWriterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.strategysquad.enrichment.OptionsEnrichedWriterTest
+[INFO] Running com.strategysquad.enrichment.OptionsEnricherTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.strategysquad.enrichment.OptionsEnricherTest
+[INFO] Running com.strategysquad.enrichment.OptionsEnrichmentJobTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.strategysquad.enrichment.OptionsEnrichmentJobTest
+[INFO] Running com.strategysquad.enrichment.SpotLiveLookupTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.strategysquad.enrichment.SpotLiveLookupTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyArchiveDownloaderTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.221 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyArchiveDownloaderTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJobTest
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: found 2 CSV file(s) in C:\Users\shiva\AppData\Local\Temp\junit1866651436926123659
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed day1.csv (50%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed day2.csv (100%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load complete: 2/2 files totalRows=30 optionsInserted=18 instrumentsInserted=8 spotInserted=4 errors=0
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: found 2 CSV file(s) in C:\Users\shiva\AppData\Local\Temp\junit14423661303371303294
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+WARNING: Bulk load: failed to process bad.csv
+java.io.IOException: corrupted file
+	at com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJobTest$1.ingestFile(BhavcopyBulkLoadJobTest.java:72)
+	at com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJobTest$RecordingIngestionJob.ingest(BhavcopyBulkLoadJobTest.java:140)
+	at com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob.loadDirectory(BhavcopyBulkLoadJob.java:75)
+	at com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJobTest.recordsFailedFilesWithoutAborting(BhavcopyBulkLoadJobTest.java:79)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:728)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:218)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:214)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:139)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:69)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed good.csv (100%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load complete: 1/2 files totalRows=0 optionsInserted=0 instrumentsInserted=0 spotInserted=0 errors=1
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: found 1 CSV file(s) in C:\Users\shiva\AppData\Local\Temp\junit5171502556424585025
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed index_20240417.csv (100%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load complete: 1/1 files totalRows=0 optionsInserted=0 instrumentsInserted=0 spotInserted=0 errors=0
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: found 1 CSV file(s) in C:\Users\shiva\AppData\Local\Temp\junit14202598740330710163
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed data.csv (100%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load complete: 1/1 files totalRows=0 optionsInserted=0 instrumentsInserted=0 spotInserted=0 errors=0
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: found 2 CSV file(s) in C:\Users\shiva\AppData\Local\Temp\junit7829240053536478056
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed a_20240417.csv (50%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load: completed b_20240418.csv (100%)
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJob loadDirectory
+INFO: Bulk load complete: 2/2 files totalRows=0 optionsInserted=0 instrumentsInserted=0 spotInserted=0 errors=0
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.093 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyBulkLoadJobTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyCsvReaderTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.042 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyCsvReaderTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyFilterTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyFilterTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyIngestionJobTest
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyIngestionJob logSummary
+INFO: Bhavcopy ingestion completed for \tmp\sample-bhavcopy.csv totalRows=3 relevantOptionRows=2 normalizedOptionRows=1 relevantSpotRows=1 normalizedSpotRows=1 invalidRows=2 instrumentsInserted=1 optionsHistoricalInserted=1 spotHistoricalInserted=1
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyIngestionJob logSummary
+WARNING: Rejected Bhavcopy row line=1 reason=column count mismatch rawData=bad,row
+Apr 26, 2026 4:04:14 PM com.strategysquad.ingestion.bhavcopy.BhavcopyIngestionJob logSummary
+WARNING: Rejected Bhavcopy row line=3 reason=OPEN is missing rawData=option-3
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.104 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyIngestionJobTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyNormalizerTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyNormalizerTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyRelevantCsvFilterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyRelevantCsvFilterTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyReportDiscovererTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyReportDiscovererTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyReportSelectorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyReportSelectorTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyWriterTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyWriterTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.BhavcopyZipExtractorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in com.strategysquad.ingestion.bhavcopy.BhavcopyZipExtractorTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.InstrumentKeyTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.strategysquad.ingestion.bhavcopy.InstrumentKeyTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.InstrumentResolverTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.strategysquad.ingestion.bhavcopy.InstrumentResolverTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.SpotBhavcopyFilterTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.strategysquad.ingestion.bhavcopy.SpotBhavcopyFilterTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.SpotBhavcopyNormalizerTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.strategysquad.ingestion.bhavcopy.SpotBhavcopyNormalizerTest
+[INFO] Running com.strategysquad.ingestion.bhavcopy.SpotBhavcopyWriterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.strategysquad.ingestion.bhavcopy.SpotBhavcopyWriterTest
+[INFO] Running com.strategysquad.ingestion.kite.KiteDailyTokenStoreTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in com.strategysquad.ingestion.kite.KiteDailyTokenStoreTest
+[INFO] Running com.strategysquad.ingestion.kite.KiteInstrumentFilterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.strategysquad.ingestion.kite.KiteInstrumentFilterTest
+[INFO] Running com.strategysquad.ingestion.kite.KiteInstrumentRecordTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.strategysquad.ingestion.kite.KiteInstrumentRecordTest
+[INFO] Running com.strategysquad.ingestion.live.LiveTickIngestionJobTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in com.strategysquad.ingestion.live.LiveTickIngestionJobTest
+[INFO] Running com.strategysquad.ingestion.live.OptionLiveTickTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.strategysquad.ingestion.live.OptionLiveTickTest
+[INFO] Running com.strategysquad.ingestion.live.OptionsLiveWriterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.strategysquad.ingestion.live.OptionsLiveWriterTest
+[INFO] Running com.strategysquad.ingestion.live.SpotLiveTickTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.strategysquad.ingestion.live.SpotLiveTickTest
+[INFO] Running com.strategysquad.ingestion.live.SpotLiveWriterTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.strategysquad.ingestion.live.SpotLiveWriterTest
+[INFO] Running com.strategysquad.research.CanonicalPriceResolverServiceTest
+[price-resolver] instrumentKey=OPT-1 sessionState=LIVE_MARKET selectedSource=live_cache priceType=LIVE_LTP price=141.25 asOf=2026-04-21T06:00:00Z tradeDate=2026-04-21 stale=false reason=Live option price
+[price-resolver] instrumentKey=OPT-3 sessionState=POST_CLOSE selectedSource=historical_db priceType=PRE_CLOSE_LAST_TRADE price=118.55 asOf=2026-04-21T09:59:59Z tradeDate=2026-04-21 stale=false reason=Official close unavailable; using last valid trade before close
+[price-resolver] instrumentKey=NIFTY sessionState=HOLIDAY_NO_SESSION selectedSource=historical_db priceType=PRIOR_CLOSE price=22461.40 asOf=2026-04-20T04:30:00Z tradeDate=2026-04-17 stale=false reason=Prior close
+[price-resolver] instrumentKey=NIFTY sessionState=EOD_FINALIZED selectedSource=historical_db priceType=OFFICIAL_CLOSE price=25174.60 asOf=2026-04-23T11:35:00Z tradeDate=2026-04-23 stale=false reason=Official close
+[price-resolver] instrumentKey=OPT-2 sessionState=POST_CLOSE selectedSource=historical_db priceType=OFFICIAL_CLOSE price=132.00 asOf=2026-04-21T10:00:00Z tradeDate=2026-04-21 stale=false reason=Official close
+[price-resolver] instrumentKey=NIFTY-2026-04-30-22500-PE sessionState=POST_CLOSE selectedSource=unavailable priceType=UNAVAILABLE price=unavailable asOf=2026-04-21T10:15:00Z tradeDate=null stale=true reason=Exact contract lookup failed
+[price-resolver] instrumentKey=OPT-6 sessionState=LIVE_MARKET selectedSource=unavailable priceType=UNAVAILABLE price=unavailable asOf=2026-04-21T05:40:05Z tradeDate=null stale=true reason=No live or intraday price available
+[price-resolver] instrumentKey=OPT-4 sessionState=EOD_FINALIZED selectedSource=historical_db priceType=PRIOR_CLOSE price=99.80 asOf=2026-04-18T10:00:00Z tradeDate=2026-04-18 stale=false reason=Official close missing; using prior close
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in com.strategysquad.research.CanonicalPriceResolverServiceTest
+[INFO] Running com.strategysquad.research.CanonicalScenarioResolverTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.strategysquad.research.CanonicalScenarioResolverTest
+[INFO] Running com.strategysquad.research.DeltaAdjustmentServiceTest
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=REDUCE trigger=NORMAL reasonCode=normal_significant_neutrality_improvement leg=Long put strike=22300 oldQty=130 newQty=65 lots=4/4 availableLots=0 net2m=-48.75 net5m=-42.9 netSod=-35.75 postNet=-22.75 improvement=26 theta=0.065625 score=0.2628645833333333 pnl2m=0 pnl5m=1 dir=NEUTRAL alignment=NEUTRAL volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService skipped
+INFO: [adjustment_skipped_churn_guard] action=SKIP trigger=SKIPPED reasonCode=churn_guard_active leg=Balancing short put strike=22450 oldQty=65 newQty=65 lots=1/20 availableLots=19 net2m=-39 net5m=-39 netSod=-39 postNet=-19.5 improvement=19.5 theta=n/a score=n/a pnl2m=-1 pnl5m=-2 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=null thetaBenefitQty=n/a thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService skipped
+INFO: [adjustment_skipped_cooldown] action=SKIP trigger=SKIPPED reasonCode=cooldown_active leg=Short call strike=22500 oldQty=130 newQty=130 lots=3/3 availableLots=0 net2m=-65 net5m=-59.8 netSod=-54.6 postNet=-26 improvement=39 theta=n/a score=n/a pnl2m=-1 pnl5m=-2 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=null thetaBenefitQty=n/a thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=ADD trigger=NORMAL reasonCode=normal_significant_neutrality_improvement leg=Rich short put strike=22400 oldQty=0 newQty=65 lots=2/20 availableLots=18 net2m=-26 net5m=-24.05 netSod=-22.1 postNet=-13 improvement=13 theta=1 score=1.15 pnl2m=-1 pnl5m=-2 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=ADD trigger=NORMAL reasonCode=normal_significant_neutrality_improvement leg=Short put strike=22350 oldQty=65 newQty=130 lots=3/20 availableLots=17 net2m=-35.75 net5m=-31.2 netSod=-26 postNet=-19.5 improvement=16.25 theta=1 score=1.104545454545454 pnl2m=1 pnl5m=2 dir=NEUTRAL alignment=NEUTRAL volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=REDUCE trigger=NORMAL reasonCode=normal_significant_neutrality_improvement leg=Short call strike=22500 oldQty=130 newQty=65 lots=3/3 availableLots=0 net2m=-65 net5m=-59.8 netSod=-54.6 postNet=-26 improvement=39 theta=-0.4583333333333332 score=0.5937500000000001 pnl2m=-1 pnl5m=-2 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=ADD trigger=HARD reasonCode=hard_critical_net_delta leg=Balancing short put strike=22450 oldQty=0 newQty=65 lots=1/20 availableLots=19 net2m=-39 net5m=-39 netSod=-39 postNet=-19.5 improvement=19.5 theta=1 score=0.7 pnl2m=-1 pnl5m=-2 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService skipped
+INFO: [adjustment_skipped_max_lots_cap] action=SKIP trigger=SKIPPED reasonCode=max_lot_cap_reached leg=Short call 0 strike=22500 oldQty=65 newQty=65 lots=20/20 availableLots=0 net2m=-520 net5m=-520 netSod=-520 postNet=n/a improvement=0 theta=n/a score=n/a pnl2m=-2 pnl5m=-4 dir=NEUTRAL alignment=UNFAVORABLE volumeConfirmed=false volumeBypassed=false portfolioTheta=null thetaBenefitQty=n/a thetaRatio=n/a
+Apr 26, 2026 4:04:15 PM com.strategysquad.research.DeltaAdjustmentService evaluate
+INFO: [delta_adjustment_applied] action=REDUCE trigger=HARD reasonCode=hard_critical_net_delta leg=Long put hedge strike=22300 oldQty=130 newQty=65 lots=3/20 availableLots=17 net2m=-45.5 net5m=-39.65 netSod=-33.8 postNet=-19.5 improvement=26 theta=0.028125 score=0.5242410714285714 pnl2m=-9 pnl5m=-16 dir=BULLISH alignment=UNFAVORABLE volumeConfirmed=true volumeBypassed=false portfolioTheta=THETA_UNAVAILABLE thetaBenefitQty=0 thetaRatio=n/a
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.136 s -- in com.strategysquad.research.DeltaAdjustmentServiceTest
+[INFO] Running com.strategysquad.research.DiagnosticsSnapshotCalculatorTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in com.strategysquad.research.DiagnosticsSnapshotCalculatorTest
+[INFO] Running com.strategysquad.research.EconomicMetricsTransformerTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in com.strategysquad.research.EconomicMetricsTransformerTest
+[INFO] Running com.strategysquad.research.EmpiricalDeltaResponseServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.strategysquad.research.EmpiricalDeltaResponseServiceTest
+[INFO] Running com.strategysquad.research.FairValueSnapshotCalculatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.strategysquad.research.FairValueSnapshotCalculatorTest
+[INFO] Running com.strategysquad.research.ForwardOutcomeSnapshotCalculatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.strategysquad.research.ForwardOutcomeSnapshotCalculatorTest
+[INFO] Running com.strategysquad.research.LiveEconomicMetricsTransformerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.strategysquad.research.LiveEconomicMetricsTransformerTest
+[INFO] Running com.strategysquad.research.LiveMarketReadinessServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.strategysquad.research.LiveMarketReadinessServiceTest
+[INFO] Running com.strategysquad.research.LotSizingRulesTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.strategysquad.research.LotSizingRulesTest
+[INFO] Running com.strategysquad.research.MarketSessionStateResolverTest
+[session-state] transition UNKNOWN -> LIVE_MARKET at 2026-04-21T11:00+05:30[Asia/Kolkata]
+[session-state] transition UNKNOWN -> PREOPEN at 2026-04-21T08:30+05:30[Asia/Kolkata]
+[session-state] transition UNKNOWN -> EOD_FINALIZED at 2026-04-21T16:15+05:30[Asia/Kolkata]
+[session-state] transition UNKNOWN -> EOD_FINALIZED at 2026-04-20T20:00+05:30[Asia/Kolkata]
+[session-state] transition UNKNOWN -> HOLIDAY_NO_SESSION at 2026-04-19T10:00+05:30[Asia/Kolkata]
+[session-state] transition UNKNOWN -> POST_CLOSE at 2026-04-21T15:45+05:30[Asia/Kolkata]
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.strategysquad.research.MarketSessionStateResolverTest
+[INFO] Running com.strategysquad.research.PositionPnlCalculatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.strategysquad.research.PositionPnlCalculatorTest
+[INFO] Running com.strategysquad.research.PositionSessionActionServiceTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.strategysquad.research.PositionSessionActionServiceTest
+[INFO] Running com.strategysquad.research.ResearchApiIntegrationTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.094 s -- in com.strategysquad.research.ResearchApiIntegrationTest
+[INFO] Running com.strategysquad.research.ResearchPositionSessionServiceTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.093 s -- in com.strategysquad.research.ResearchPositionSessionServiceTest
+[INFO] Running com.strategysquad.research.StrategyAnalysisCalculatorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in com.strategysquad.research.StrategyAnalysisCalculatorTest
+[INFO] Running com.strategysquad.research.StrategyRunReportServiceTest
+Apr 26, 2026 4:04:17 PM com.strategysquad.research.StrategyRunReportService writeReportSafely
+WARNING: Unable to write strategy run report
+java.nio.file.FileAlreadyExistsException: C:\Users\shiva\AppData\Local\Temp\junit6442024208651873344\occupied-file
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(WindowsException.java:87)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:103)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:108)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.createDirectory(WindowsFileSystemProvider.java:527)
+	at java.base/java.nio.file.Files.createDirectory(Files.java:699)
+	at java.base/java.nio.file.Files.createAndCheckIsDirectory(Files.java:807)
+	at java.base/java.nio.file.Files.createDirectories(Files.java:752)
+	at com.strategysquad.research.StrategyRunReportService.writeReport(StrategyRunReportService.java:49)
+	at com.strategysquad.research.StrategyRunReportService.writeReportSafely(StrategyRunReportService.java:62)
+	at com.strategysquad.research.StrategyRunReportServiceTest.writeReportSafelyReturnsNullWhenRootCannotBeCreated(StrategyRunReportServiceTest.java:67)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:728)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:218)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:214)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:139)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:69)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:198)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:169)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:93)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:141)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:57)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:103)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:85)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:47)
+	at org.apache.maven.surefire.junitplatform.LazyLauncher.execute(LazyLauncher.java:56)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:184)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:148)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:122)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.058 s -- in com.strategysquad.research.StrategyRunReportServiceTest
+[INFO] Running com.strategysquad.research.StrategyStructureDefinitionTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.strategysquad.research.StrategyStructureDefinitionTest
+[INFO] Running com.strategysquad.research.TimeframeAnalysisSnapshotCalculatorTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in com.strategysquad.research.TimeframeAnalysisSnapshotCalculatorTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   ProfitBookingAgentTest.bookedPnl_correctAfterFullBooking:259 Total booked PnL must equal sum of (entry-exit)*qty for full booking ==> expected: <12350> but was: <12350.0>
+[ERROR]   ProfitBookingAgentTest.bookedPnl_correctAfterPartialBooking:219 Total booked PnL must equal sum of (entry-exit)*qty per leg ==> expected: <5200> but was: <5200.0>
+[INFO] 
+[ERROR] Tests run: 315, Failures: 2, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  9.383 s
+[INFO] Finished at: 2026-04-26T16:04:17+05:30
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project strategy-squad: There are test failures.
+[ERROR] 
+[ERROR] Please refer to c:\Users\shiva\OptionAlpha\strategy-squad\target\surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

@@ -1,0 +1,55 @@
+Picked up JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.strategysquad:strategy-squad >------------------
+[INFO] Building Strategy Squad 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ strategy-squad ---
+[INFO] skip non existing resourceDirectory c:\Users\shiva\OptionAlpha\strategy-squad\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ strategy-squad ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 152 source files with javac [debug target 17] to target\classes
+[INFO] -------------------------------------------------------------
+[WARNING] COMPILATION WARNING : 
+[INFO] -------------------------------------------------------------
+[WARNING] system modules path not set in conjunction with -source 17
+[INFO] 1 warning
+[INFO] -------------------------------------------------------------
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /c:/Users/shiva/OptionAlpha/strategy-squad/src/main/java/com/strategysquad/agentic/scanner/MorningScannerService.java:[77,19] cannot access com.strategysquad.agentic.scanner.CandidateScoringEngine
+  bad source file: c:\Users\shiva\OptionAlpha\strategy-squad\src\main\java\com\strategysquad\agentic\scanner\CandidateScoringEngine.java
+    file does not contain class com.strategysquad.agentic.scanner.CandidateScoringEngine
+    Please remove or make sure it appears in the correct subdirectory of the sourcepath.
+[ERROR] /c:/Users/shiva/OptionAlpha/strategy-squad/src/main/java/com/strategysquad/agentic/scanner/MorningScannerService.java:[93,34] cannot access com.strategysquad.agentic.scanner.ScannerQuery
+  bad source file: c:\Users\shiva\OptionAlpha\strategy-squad\src\main\java\com\strategysquad\agentic\scanner\ScannerQuery.java
+    file does not contain class com.strategysquad.agentic.scanner.ScannerQuery
+    Please remove or make sure it appears in the correct subdirectory of the sourcepath.
+[INFO] 2 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.016 s
+[INFO] Finished at: 2026-04-28T14:29:07+05:30
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project strategy-squad: Compilation failure: Compilation failure: 
+[ERROR] /c:/Users/shiva/OptionAlpha/strategy-squad/src/main/java/com/strategysquad/agentic/scanner/MorningScannerService.java:[77,19] cannot access com.strategysquad.agentic.scanner.CandidateScoringEngine
+[ERROR]   bad source file: c:\Users\shiva\OptionAlpha\strategy-squad\src\main\java\com\strategysquad\agentic\scanner\CandidateScoringEngine.java
+[ERROR]     file does not contain class com.strategysquad.agentic.scanner.CandidateScoringEngine
+[ERROR]     Please remove or make sure it appears in the correct subdirectory of the sourcepath.
+[ERROR] /c:/Users/shiva/OptionAlpha/strategy-squad/src/main/java/com/strategysquad/agentic/scanner/MorningScannerService.java:[93,34] cannot access com.strategysquad.agentic.scanner.ScannerQuery
+[ERROR]   bad source file: c:\Users\shiva\OptionAlpha\strategy-squad\src\main\java\com\strategysquad\agentic\scanner\ScannerQuery.java
+[ERROR]     file does not contain class com.strategysquad.agentic.scanner.ScannerQuery
+[ERROR]     Please remove or make sure it appears in the correct subdirectory of the sourcepath.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

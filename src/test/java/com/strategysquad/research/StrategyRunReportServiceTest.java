@@ -236,7 +236,10 @@ class StrategyRunReportServiceTest {
                                 new BigDecimal("0.88"),
                                 new BigDecimal("1.61")
                         )
-                )
+                ),
+                null,
+                null,
+                null
         );
     }
 }

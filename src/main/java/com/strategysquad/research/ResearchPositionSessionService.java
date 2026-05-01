@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Objects;
 
 /**
@@ -32,6 +34,58 @@ public final class ResearchPositionSessionService {
                 .serializeNulls()
                 .registerTypeAdapter(Instant.class, new InstantJsonCodec())
                 .create();
+    }
+
+    public java.util.List<PositionSessionSnapshot> loadAll() throws IOException {
+        if (Files.notExists(storeRoot)) {
+            return java.util.List.of();
+        }
+        java.util.List<PositionSessionSnapshot> results = new java.util.ArrayList<>();
+        try (java.util.stream.Stream<Path> stream = Files.list(storeRoot)) {
+            for (Path file : stream
+                    .filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .filter(p -> !p.getFileName().toString().endsWith(".tmp"))
+                    .sorted(java.util.Comparator.comparing(p -> p.getFileName().toString()))
+                    .toList()) {
+                try {
+                    String json = Files.readString(file, StandardCharsets.UTF_8);
+                    PositionSessionSnapshot snapshot = gson.fromJson(json, PositionSessionSnapshot.class);
+                    if (snapshot != null) results.add(snapshot);
+                } catch (Exception ignored) {
+                    // skip corrupted files
+                }
+            }
+        }
+        return java.util.List.copyOf(results);
+    }
+
+    public java.util.List<PositionSessionSnapshot> loadForTradingDay(LocalDate tradingDay, ZoneId zoneId)
+            throws IOException {
+        Objects.requireNonNull(tradingDay, "tradingDay must not be null");
+        Objects.requireNonNull(zoneId, "zoneId must not be null");
+        return loadAll().stream()
+                .filter(s -> s.createdAt() != null)
+                .filter(s -> s.createdAt().atZone(zoneId).toLocalDate().equals(tradingDay))
+                .toList();
+    }
+
+    public int deleteSessionsBefore(LocalDate tradingDay, ZoneId zoneId) throws IOException {
+        Objects.requireNonNull(tradingDay, "tradingDay must not be null");
+        Objects.requireNonNull(zoneId, "zoneId must not be null");
+        if (Files.notExists(storeRoot)) {
+            return 0;
+        }
+        int deleted = 0;
+        for (PositionSessionSnapshot snapshot : loadAll()) {
+            if (snapshot == null || snapshot.createdAt() == null) {
+                continue;
+            }
+            LocalDate sessionDay = snapshot.createdAt().atZone(zoneId).toLocalDate();
+            if (sessionDay.isBefore(tradingDay) && delete(snapshot.sessionId())) {
+                deleted++;
+            }
+        }
+        return deleted;
     }
 
     public PositionSessionSnapshot load(String sessionId) throws IOException {

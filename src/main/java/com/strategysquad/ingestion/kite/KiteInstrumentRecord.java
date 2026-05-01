@@ -40,7 +40,7 @@ public record KiteInstrumentRecord(
             long instrumentToken = Long.parseLong(cols[0].trim());
             String exchangeToken = normalizeText(cols[1]);
             String tradingSymbol = normalizeText(cols[2]);
-            String name = normalizeText(cols[3]);
+            String name = canonicalUnderlying(normalizeText(cols[3]));
             // cols[4] = last_price (ignored)
             String expiryStr = normalizeText(cols[5]);
             LocalDate expiry = expiryStr.isEmpty() ? null : LocalDate.parse(expiryStr);
@@ -66,6 +66,17 @@ public record KiteInstrumentRecord(
             normalized = normalized.substring(1, normalized.length() - 1);
         }
         return normalized.trim();
+    }
+
+    static String canonicalUnderlying(String value) {
+        String normalized = normalizeText(value).toUpperCase();
+        if ("NIFTY 50".equals(normalized)) {
+            return "NIFTY";
+        }
+        if ("NIFTY BANK".equals(normalized)) {
+            return "BANKNIFTY";
+        }
+        return normalized;
     }
 
     /** True if this is a NIFTY or BANKNIFTY CE/PE option on NFO. */

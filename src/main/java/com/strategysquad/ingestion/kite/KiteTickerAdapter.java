@@ -25,6 +25,12 @@ import java.util.Objects;
  *   <li>Index spot: {@code NSE:NIFTY 50}, {@code NSE:NIFTY BANK}</li>
  *   <li>Options: {@code NFO:<tradingSymbol>} (e.g. {@code NFO:NIFTY26APR22500CE})</li>
  * </ul>
+ *
+ * <p>The {@code quoteKeyToInstrumentId} map is accepted per-call so that the adapter
+ * remains compatible with atomic subscription swaps: the caller (
+ * {@link KiteTickerSession}) takes a single {@link KiteSubscriptionManager.Subscription}
+ * snapshot at the start of each poll cycle and passes the map from that snapshot.
+ * This prevents a race where the map and the quote-key list diverge mid-poll.
  */
 public final class KiteTickerAdapter {
 
@@ -35,12 +41,9 @@ public final class KiteTickerAdapter {
     private static final DateTimeFormatter KITE_TS_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // Maps "NFO:<tradingSymbol>" → instrumentId (e.g. INS_NIFTY_20260424_22500_CE)
-    private final Map<String, String> quoteKeyToInstrumentId;
     private final LiveSessionState sessionState;
 
-    public KiteTickerAdapter(Map<String, String> quoteKeyToInstrumentId, LiveSessionState sessionState) {
-        this.quoteKeyToInstrumentId = Objects.requireNonNull(quoteKeyToInstrumentId);
+    public KiteTickerAdapter(LiveSessionState sessionState) {
         this.sessionState = Objects.requireNonNull(sessionState);
     }
 
@@ -48,10 +51,14 @@ public final class KiteTickerAdapter {
      * Converts the {@code data} object from a Kite {@code /quote} JSON response
      * into option and spot tick lists.
      *
-     * @param data the {@code data} field from the parsed Kite response JSON
+     * @param data             the {@code data} field from the parsed Kite response JSON
+     * @param quoteKeyToId     snapshot map from {@code "NFO:<tradingSymbol>"} to
+     *                         {@code instrumentId}; taken atomically from
+     *                         {@link KiteSubscriptionManager.Subscription#quoteKeyToId()}
      */
-    public AdaptedTicks adapt(JsonObject data) {
+    public AdaptedTicks adapt(JsonObject data, Map<String, String> quoteKeyToId) {
         Objects.requireNonNull(data, "data must not be null");
+        Objects.requireNonNull(quoteKeyToId, "quoteKeyToId must not be null");
         List<SpotLiveTick> spotTicks = new ArrayList<>();
         List<OptionLiveTick> optionTicks = new ArrayList<>();
         Instant ingestTs = Instant.now();
@@ -74,7 +81,7 @@ public final class KiteTickerAdapter {
                 continue;
             }
 
-            String instrumentId = quoteKeyToInstrumentId.get(key);
+            String instrumentId = quoteKeyToId.get(key);
             if (instrumentId == null) continue;
 
             String underlying = deriveUnderlying(instrumentId);

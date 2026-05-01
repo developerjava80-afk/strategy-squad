@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Strategy Lab</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="strategy-lab">
+<div class="app-shell">
+
+    <!-- ── Top nav ────────────────────────────────────────────────────── -->
+    <header class="top-nav" aria-label="Primary">
+        <a class="brand" href="/index.html">
+            <span class="brand-mark">SS</span>
+            <span><strong>Strategy Squad</strong><small>Theta command center</small></span>
+        </a>
+        <nav class="nav-links">
+            <a href="/index.html">Dashboard</a>
+            <a class="active" href="/strategy-lab.html">Strategy Lab</a>
+            <a href="/orders.html">Orders</a>
+            <a href="/testing-analytics.html">Testing</a>
+        </nav>
+        <div class="session-card" id="lab-session-card">
+            <span>Lab Status</span>
+            <strong id="lab-backend-state">Connecting…</strong>
+            <small id="lab-backend-detail">Reaching backend</small>
+        </div>
+    </header>
+
+    <main class="page">
+
+        <!-- ── 1. SCOPE PANEL ─────────────────────────────────────────── -->
+        <!--
+            Loads on page open: only NIFTY spot + BANKNIFTY spot + expiry metadata.
+            No instruments loaded. No scanner started. No option contracts subscribed.
+            User must complete all scope fields before Start Scan is enabled.
+        -->
+        <section class="scope-panel" id="scope-panel" aria-label="Scan scope">
+
+            <!-- Live spot strip (always shown, loaded immediately) -->
+            <div class="scope-spot-strip">
+                <div class="scope-spot-card" id="nifty-spot-card">
+                    <span class="scope-spot-label">NIFTY</span>
+                    <strong class="scope-spot-price" id="nifty-spot-price">—</strong>
+                    <small class="scope-spot-time" id="nifty-spot-time">loading…</small>
+                </div>
+                <div class="scope-spot-card" id="banknifty-spot-card">
+                    <span class="scope-spot-label">BANKNIFTY</span>
+                    <strong class="scope-spot-price" id="banknifty-spot-price">—</strong>
+                    <small class="scope-spot-time" id="banknifty-spot-time">loading…</small>
+                </div>
+                <div class="scope-spot-divider"></div>
+                <!-- Active scope summary (shown only after scope is set) -->
+                <div class="scope-active-summary" id="scope-active-summary" hidden>
+                    <span class="scope-summary-label">Active Scope</span>
+                    <strong id="scope-summary-text">—</strong>
+                    <small id="scope-summary-universe">—</small>
+                </div>
+            </div>
+
+            <!-- Scope configuration fields (always shown until scope is locked) -->
+            <div class="scope-config" id="scope-config">
+                <div class="scope-config-fields">
+                    <label class="scope-cfg-field">
+                        <span>Underlying</span>
+                        <select id="sc-underlying">
+                            <option value="NIFTY">NIFTY</option>
+                            <option value="BANKNIFTY">BANKNIFTY</option>
+                        </select>
+                    </label>
+
+                    <label class="scope-cfg-field">
+                        <span>Expiry</span>
+                        <select id="sc-expiry"><option value="">Loading expiries…</option></select>
+                    </label>
+
+                    <label class="scope-cfg-field">
+                        <span>Strategy</span>
+                        <select id="sc-strategy">
+                            <option value="SHORT_STRANGLE">Short Strangle</option>
+                            <option value="SHORT_STRADDLE">Short Straddle</option>
+                            <option value="IRON_CONDOR">Iron Condor</option>
+                            <option value="ANALYSIS_ONLY">Analysis Only</option>
+                        </select>
+                    </label>
+
+                    <label class="scope-cfg-field">
+                        <span>Strike Window</span>
+                        <select id="sc-strike-kind">
+                            <option value="ATM_PCT">ATM ± %</option>
+                            <option value="ATM_POINTS">ATM ± Points</option>
+                        </select>
+                    </label>
+
+                    <label class="scope-cfg-field" id="sc-pct-row">
+                        <span>ATM %</span>
+                        <input id="sc-strike-pct" type="number" min="0.5" max="15" step="0.5" value="4.0">
+                        <small class="scope-cfg-hint">±4% from spot</small>
+                    </label>
+
+                    <label class="scope-cfg-field" id="sc-pts-row" hidden>
+                        <span>ATM Points</span>
+                        <input id="sc-strike-pts" type="number" min="50" max="5000" step="50" value="500">
+                        <small class="scope-cfg-hint">±500 pts from spot</small>
+                    </label>
+
+                    <label class="scope-cfg-field">
+                        <span>Max Contracts</span>
+                        <input id="sc-max-candidates" type="number" min="1" max="100" step="1" value="30">
+                        <small class="scope-cfg-hint">Hard cap: 100</small>
+                    </label>
+                </div>
+
+                <div class="scope-config-actions">
+                    <button class="scope-start-btn" id="scope-start-btn" type="button" disabled>
+                        Start Scan
+                    </button>
+                    <button class="scope-clear-btn" id="scope-clear-btn" type="button" hidden>
+                        Clear Scope
+                    </button>
+                    <p class="scope-error" id="scope-error" aria-live="polite"></p>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ── 2. PRE-SCOPE GATE ──────────────────────────────────────── -->
+        <!--
+            Shown when no scope is active. Hidden after first successful scan.
+            Directs user to configure scope before any data is shown.
+        -->
+        <section class="pre-scope-gate" id="pre-scope-gate" aria-label="Scope required">
+            <div class="pre-scope-content">
+                <div class="pre-scope-icon" aria-hidden="true">⊙</div>
+                <h2>Set scope to begin</h2>
+                <p>
+                    Choose underlying, expiry, strategy, and strike window above,
+                    then click <strong>Start Scan</strong>.
+                    Only the selected contracts will be loaded — no full option chain.
+                </p>
+                <div class="pre-scope-checklist">
+                    <div class="psc-item" id="psc-underlying">
+                        <span class="psc-dot"></span><span>Underlying selected</span>
+                    </div>
+                    <div class="psc-item" id="psc-expiry">
+                        <span class="psc-dot"></span><span>Expiry selected</span>
+                    </div>
+                    <div class="psc-item" id="psc-strategy">
+                        <span class="psc-dot"></span><span>Strategy selected</span>
+                    </div>
+                    <div class="psc-item" id="psc-strike">
+                        <span class="psc-dot"></span><span>Strike window configured</span>
+                    </div>
+                    <div class="psc-item" id="psc-max">
+                        <span class="psc-dot"></span><span>Max contracts ≤ 100</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── 3. MAIN SCAN TABLE (hidden until scope is active + scan run) ── -->
+        <section class="lab-scan-section" id="lab-scan-section" hidden>
+
+            <!-- Strategy-level summary strip -->
+            <div class="strategy-summary-strip" id="strategy-summary-strip">
+                <div class="sss-card">
+                    <span>Strategy</span>
+                    <strong id="sss-strategy">—</strong>
+                </div>
+                <div class="sss-card">
+                    <span>Underlying / Expiry</span>
+                    <strong id="sss-expiry">—</strong>
+                </div>
+                <div class="sss-card">
+                    <span>Contracts Scanned</span>
+                    <strong id="sss-count">—</strong>
+                </div>
+                <div class="sss-card sss-signal" id="sss-richness-card">
+                    <span>Premium Rich?</span>
+                    <strong id="sss-richness">—</strong>
+                </div>
+                <div class="sss-card sss-signal" id="sss-delta-card">
+                    <span>Net Delta</span>
+                    <strong id="sss-net-delta">—</strong>
+                </div>
+                <div class="sss-card sss-signal" id="sss-theta-card">
+                    <span>Theta Trend</span>
+                    <strong id="sss-theta">—</strong>
+                </div>
+                <div class="sss-card">
+                    <span>Last Updated</span>
+                    <strong id="sss-updated">—</strong>
+                </div>
+                <div class="sss-card">
+                    <button class="scope-start-btn sss-refresh-btn" id="lab-refresh-btn" type="button">↺ Refresh</button>
+                </div>
+            </div>
+
+            <!-- Scan-too-broad error (shown instead of table) -->
+            <div class="scope-too-broad" id="scope-too-broad" hidden>
+                <strong>⚠ Scope too broad</strong>
+                <p id="scope-too-broad-msg">Please reduce strike range or contract count.</p>
+            </div>
+
+            <!-- Candidate table -->
+            <div class="panel scan-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Scan Results</p>
+                        <h2 id="scan-panel-title">Scanner output</h2>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <span id="lab-count" class="status-pill neutral">—</span>
+                        <label class="field" style="min-width:130px;margin:0;">
+                            <span>Filter</span>
+                            <select id="lab-type-filter" style="min-height:32px;padding:5px 8px;">
+                                <option value="">All (CE + PE)</option>
+                                <option value="CE">CE only</option>
+                                <option value="PE">PE only</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+                <table class="data-table scan-table">
+                    <thead>
+                        <tr>
+                            <!--
+                                9 signal columns per spec.
+                                No score. No theta score. No liquidity score. No delta risk score.
+                            -->
+                            <th class="col-contract">
+                                Contract / Leg
+                                <small class="col-sub">Symbol · CE/PE · Strike · Expiry</small>
+                            </th>
+                            <th class="col-premium">
+                                Current Premium
+                                <small class="col-sub">Last traded · timestamp</small>
+                            </th>
+                            <th class="col-hist">
+                                5Y Historical Avg
+                                <small class="col-sub">Matched cohort (same context)</small>
+                            </th>
+                            <th class="col-richness">
+                                Premium Richness
+                                <small class="col-sub">pts &amp; %</small>
+                            </th>
+                            <th class="col-delta">
+                                Observed Δ
+                                <small class="col-sub">Market-observed · no BS</small>
+                            </th>
+                            <th class="col-adj-theta">
+                                Δ-Adjusted Theta
+                                <small class="col-sub">Live signal · rolling</small>
+                            </th>
+                            <th class="col-theta-pattern">
+                                Theta Pattern
+                                <small class="col-sub">Improving / Weakening / Expanding</small>
+                            </th>
+                            <th class="col-net-delta">
+                                Strategy Net Δ
+                                <small class="col-sub">Neutral / Bullish / Bearish</small>
+                            </th>
+                            <th class="col-action">
+                                Action
+                                <small class="col-sub">Candidate / Watch / Avoid</small>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="scan-table-body">
+                        <tr><td colspan="9" class="empty-cell">Run a scan to see candidates</td></tr>
+                    </tbody>
+                </table>
+                </div>
+
+                <!-- Leg detail panel (shown on row click) -->
+                <article id="leg-detail-panel" class="leg-detail-panel" hidden>
+                    <div class="leg-detail-header">
+                        <div>
+                            <p class="kicker">Leg Detail</p>
+                            <h3 id="ld-title">—</h3>
+                        </div>
+                        <button id="ld-close" class="quiet-button" type="button" style="min-height:28px;padding:4px 10px;">✕ Close</button>
+                    </div>
+
+                    <!-- Three signal questions -->
+                    <div class="three-questions">
+                        <div class="tq-card" id="tq-richness">
+                            <span class="tq-label">① Is premium rich vs 5Y history?</span>
+                            <strong class="tq-answer" id="tq-richness-answer">—</strong>
+                            <small class="tq-detail" id="tq-richness-detail">—</small>
+                        </div>
+                        <div class="tq-card" id="tq-delta">
+                            <span class="tq-label">② Is combined delta near zero?</span>
+                            <strong class="tq-answer" id="tq-delta-answer">—</strong>
+                            <small class="tq-detail" id="tq-delta-detail">—</small>
+                        </div>
+                        <div class="tq-card" id="tq-theta">
+                            <span class="tq-label">③ Is delta-adjusted theta improving?</span>
+                            <strong class="tq-answer" id="tq-theta-answer">—</strong>
+                            <small class="tq-detail" id="tq-theta-detail">—</small>
+                        </div>
+                    </div>
+
+                    <!-- Rolling delta windows -->
+                    <div class="ld-section">
+                        <h4 class="ld-section-title">Observed Delta — Rolling Windows</h4>
+                        <div class="delta-windows">
+                            <div class="dw-card" id="dw-1m">
+                                <span>1 min</span>
+                                <strong id="dw-1m-val">—</strong>
+                                <small id="dw-1m-rel">—</small>
+                            </div>
+                            <div class="dw-card" id="dw-3m">
+                                <span>3 min</span>
+                                <strong id="dw-3m-val">—</strong>
+                                <small id="dw-3m-rel">—</small>
+                            </div>
+                            <div class="dw-card" id="dw-5m">
+                                <span>5 min</span>
+                                <strong id="dw-5m-val">—</strong>
+                                <small id="dw-5m-rel">—</small>
+                            </div>
+                            <div class="dw-card" id="dw-15m">
+                                <span>15 min</span>
+                                <strong id="dw-15m-val">—</strong>
+                                <small id="dw-15m-rel">—</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Raw metrics table -->
+                    <div class="ld-section">
+                        <h4 class="ld-section-title">Raw Metrics</h4>
+                        <table class="compact-table">
+                            <tbody>
+                                <tr><th>Instrument ID</th><td id="ld-instrument-id">—</td></tr>
+                                <tr><th>Current Premium (pts)</th><td id="ld-current-premium">—</td></tr>
+                                <tr><th>Historical Avg (pts)</th><td id="ld-hist-avg">—</td></tr>
+                                <tr><th>Richness (pts)</th><td id="ld-richness-pts">—</td></tr>
+                                <tr><th>Richness (%)</th><td id="ld-richness-pct">—</td></tr>
+                                <tr><th>Δ-Adj Theta (pts, short side)</th><td id="ld-adj-theta">—</td></tr>
+                                <tr><th>Strategy Net Delta</th><td id="ld-net-delta">—</td></tr>
+                                <tr><th>Cohort context</th><td id="ld-cohort">—</td></tr>
+                                <tr><th>Disqualifier</th><td id="ld-disqualifier">—</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+            </div><!-- .panel -->
+        </section><!-- #lab-scan-section -->
+
+    </main>
+</div>
+
+<script src="/scope-picker.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Strategy Lab — scope-first decision console
+   Three live signal questions only:
+     ① Is premium rich vs 5Y history?
+     ② Is combined delta near zero?
+     ③ Is delta-adjusted theta improving right now?
+   No score. No composite ranking. No global instrument load.
+   Boot: only NIFTY spot + BANKNIFTY spot + metadata. Nothing else.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+    'use strict';
+
+    // ── Constants ────────────────────────────────────────────────────────────
+    var API = (location.protocol === 'file:') ? 'http://localhost:8080' : '';
+    var SPOT_POLL_MS   = 5000;   // was 30000 — tightened per Issue 6
+    var SCAN_POLL_MS   = 10000;  // was 30000 — tightened per Issue 6
+
+    // ── State ────────────────────────────────────────────────────────────────
+    var _metadata      = null;   // { underlyings, expiries }
+    var _activeScope   = null;   // scope object from server after activation
+    var _lastLegs      = [];     // last scan result legs array
+    var _selectedLegId = null;   // currently open leg detail
+    var _scanTimer     = null;
+    // Fix Issue 1: cache latest fetched spot prices so onStartScan can include them
+    var _latestSpots   = {};     // { NIFTY: {price, asOf, isStale}, BANKNIFTY: {...} }
+
+    // ── DOM refs ─────────────────────────────────────────────────────────────
+    function $(id) { return document.getElementById(id); }
+
+    // ── Utilities ────────────────────────────────────────────────────────────
+    function apiBase() { return API; }
+
+    function fetchJson(url, opts) {
+        return fetch(url, opts).then(function (r) {
+            if (!r.ok) {
+                return r.json().catch(function () { return {}; }).then(function (b) {
+                    throw new Error(b.error || b.details || r.statusText || String(r.status));
+                });
+            }
+            return r.json();
+        });
+    }
+
+    function fmt2(v) { return (v == null) ? '—' : (+v).toFixed(2); }
+    function fmt4(v) { return (v == null) ? '—' : (+v).toFixed(4); }
+    function fmtTs(ms) {
+        if (!ms) return '—';
+        var d = new Date(ms);
+        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    function fmtNow() { return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+
+    // ── Boot sequence ────────────────────────────────────────────────────────
+    function boot() {
+        wireScopeUI();
+        refreshSpots();
+        setInterval(refreshSpots, SPOT_POLL_MS);
+        loadMetadata().then(function () {
+            restoreScope();
+        });
+    }
+
+    // ── Spot prices ──────────────────────────────────────────────────────────
+    function refreshSpots() {
+        refreshOneSpot('NIFTY',     'nifty-spot-price',     'nifty-spot-time');
+        refreshOneSpot('BANKNIFTY', 'banknifty-spot-price', 'banknifty-spot-time');
+    }
+
+    function setBackendStatus(state, detail) {
+        var s = $('lab-backend-state');
+        var d = $('lab-backend-detail');
+        if (s) s.textContent = state;
+        if (d) d.textContent = detail;
+    }
+
+    function refreshOneSpot(sym, priceId, timeId) {
+        fetchJson(apiBase() + '/api/live/spot?underlying=' + sym)
+            .then(function (d) {
+                // Fix Issue 1: cache spot so onStartScan can include spotEstimate
+                _latestSpots[sym] = d;
+                setBackendStatus('Connected', 'Backend ready');
+                var el = $(priceId);
+                var te = $(timeId);
+                if (el) el.textContent = d.price != null ? (+d.price).toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—';
+                // Fix Issue 6 / spot subtitle: show priceType + source instead of raw asOf string
+                if (te) {
+                    var label = '';
+                    if (d.price == null) {
+                        label = d.diagnosticReason || 'Unavailable';
+                    } else if (d.isStale) {
+                        label = 'Stale · ' + (d.source || 'unknown');
+                    } else {
+                        var pt = d.priceType || d.sessionState || 'LIVE';
+                        label = pt + ' · ' + (d.source || 'live');
+                    }
+                    te.textContent = label;
+                    te.style.color = d.isStale ? 'var(--red, #c00)' : '';
+                }
+            })
+            .catch(function () {
+                var el = $(priceId);
+                if (el) el.textContent = '—';
+                if (sym === 'NIFTY') setBackendStatus('Disconnected', 'Cannot reach backend');
+            });
+    }
+
+    // ── Metadata ─────────────────────────────────────────────────────────────
+    function loadMetadata() {
+        return fetchJson(apiBase() + '/api/bootstrap/metadata')
+            .then(function (data) {
+                _metadata = data;
+                populateExpiries();
+                validateScopeFields();
+            })
+            .catch(function (err) {
+                console.warn('[strategy-lab] metadata load failed:', err.message);
+                _metadata = { underlyings: ['NIFTY', 'BANKNIFTY'], expiries: [] };
+            });
+    }
+
+    function populateExpiries() {
+        var underlying = $('sc-underlying') ? $('sc-underlying').value : 'NIFTY';
+        var sel = $('sc-expiry');
+        if (!sel || !_metadata) return;
+        var today = new Date().toISOString().slice(0, 10);
+        var opts = (_metadata.expiries || [])
+            .filter(function (e) { return e.underlying === underlying && e.date >= today; })
+            .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+        if (opts.length === 0) {
+            sel.innerHTML = '<option value="">No expiries available</option>';
+        } else {
+            sel.innerHTML = opts.map(function (e) {
+                var count = e.instrumentCount != null ? e.instrumentCount : '?';
+                var label = e.date + ' — ' + e.type + ' (' + count + ')';
+                return '<option value="' + e.date + '|' + e.type + '">' + label + '</option>';
+            }).join('');
+        }
+        validateScopeFields();
+    }
+
+    // ── Scope field validation ────────────────────────────────────────────────
+    function validateScopeFields() {
+        var underlying = $('sc-underlying') && $('sc-underlying').value;
+        var expiry     = $('sc-expiry')     && $('sc-expiry').value;
+        var strategy   = $('sc-strategy')   && $('sc-strategy').value;
+        var max        = parseInt(($('sc-max-candidates') || {}).value || '30', 10);
+
+        var kindEl     = $('sc-strike-kind');
+        var kind       = kindEl ? kindEl.value : 'ATM_PCT';
+        var strikeOk   = false;
+        if (kind === 'ATM_PCT') {
+            var pct = parseFloat(($('sc-strike-pct') || {}).value || '0');
+            strikeOk = isFinite(pct) && pct > 0;
+        } else {
+            var pts = parseFloat(($('sc-strike-pts') || {}).value || '0');
+            strikeOk = isFinite(pts) && pts > 0;
+        }
+
+        var ready = !!(underlying && expiry && strategy && strikeOk && max >= 1 && max <= 100);
+
+        // Update checklist
+        setPsc('psc-underlying', !!underlying);
+        setPsc('psc-expiry',     !!(expiry && expiry !== ''));
+        setPsc('psc-strategy',   !!strategy);
+        setPsc('psc-strike',     strikeOk);
+        setPsc('psc-max',        max >= 1 && max <= 100);
+
+        var btn = $('scope-start-btn');
+        if (btn) {
+            btn.disabled = !ready;
+            btn.textContent = _activeScope ? '↺ Re-scan' : 'Start Scan';
+        }
+        return ready;
+    }
+
+    function setPsc(id, ok) {
+        var el = $(id);
+        if (!el) return;
+        el.className = 'psc-item' + (ok ? ' psc-item--ok' : '');
+    }
+
+    function updateStrikeVisibility() {
+        var kind = $('sc-strike-kind') ? $('sc-strike-kind').value : 'ATM_PCT';
+        var pctRow = $('sc-pct-row');
+        var ptsRow = $('sc-pts-row');
+        if (pctRow) pctRow.hidden = (kind !== 'ATM_PCT');
+        if (ptsRow) ptsRow.hidden = (kind !== 'ATM_POINTS');
+        validateScopeFields();
+    }
+
+    // ── Wire scope UI ─────────────────────────────────────────────────────────
+    function wireScopeUI() {
+        var und = $('sc-underlying');
+        if (und) und.addEventListener('change', function () { populateExpiries(); });
+
+        var exp = $('sc-expiry');
+        if (exp) exp.addEventListener('change', validateScopeFields);
+
+        var strat = $('sc-strategy');
+        if (strat) strat.addEventListener('change', validateScopeFields);
+
+        var kind = $('sc-strike-kind');
+        if (kind) kind.addEventListener('change', updateStrikeVisibility);
+
+        var pct = $('sc-strike-pct');
+        if (pct) pct.addEventListener('input', validateScopeFields);
+
+        var pts = $('sc-strike-pts');
+        if (pts) pts.addEventListener('input', validateScopeFields);
+
+        var max = $('sc-max-candidates');
+        if (max) max.addEventListener('input', validateScopeFields);
+
+        var startBtn = $('scope-start-btn');
+        if (startBtn) startBtn.addEventListener('click', onStartScan);
+
+        var clearBtn = $('scope-clear-btn');
+        if (clearBtn) clearBtn.addEventListener('click', onClearScope);
+
+        var refreshBtn = $('lab-refresh-btn');
+        if (refreshBtn) refreshBtn.addEventListener('click', function () { runScan(); });
+
+        var typeFilter = $('lab-type-filter');
+        if (typeFilter) typeFilter.addEventListener('change', function () { renderTable(_lastLegs); });
+
+        var ldClose = $('ld-close');
+        if (ldClose) ldClose.addEventListener('click', closeLegDetail);
+
+        updateStrikeVisibility();
+    }
+
+    // ── Scope activation ──────────────────────────────────────────────────────
+    function onStartScan() {
+        if (!validateScopeFields()) return;
+        var underlying  = $('sc-underlying').value;
+        var expiryVal   = $('sc-expiry').value;
+        var expiryParts = expiryVal.split('|');
+        var kind        = $('sc-strike-kind').value;
+        var strikeWindow;
+        if (kind === 'ATM_PCT') {
+            strikeWindow = { kind: 'ATM_PCT', pct: parseFloat($('sc-strike-pct').value) };
+        } else {
+            strikeWindow = { kind: 'ATM_POINTS', points: parseFloat($('sc-strike-pts').value) };
+        }
+
+        var btn   = $('scope-start-btn');
+        var errEl = $('scope-error');
+        if (btn)   { btn.disabled = true; btn.textContent = 'Fetching spot…'; }
+        if (errEl) errEl.textContent = '';
+
+        // Fix Issue 1: resolve live spot before posting scope so ATM windows are
+        // anchored to the real price, not the backend's 0.0 default.
+        var cachedSpot = _latestSpots[underlying];
+        var spotPromise;
+        if (cachedSpot && cachedSpot.price != null && !cachedSpot.isStale) {
+            spotPromise = Promise.resolve(cachedSpot);
+        } else {
+            spotPromise = fetchJson(apiBase() + '/api/live/spot?underlying=' + encodeURIComponent(underlying))
+                .then(function (d) { _latestSpots[underlying] = d; return d; });
+        }
+
+        spotPromise.then(function (spotData) {
+            var spotEstimate = (spotData && spotData.price != null) ? Number(spotData.price) : null;
+            if (spotEstimate == null || !isFinite(spotEstimate) || spotEstimate <= 0) {
+                var msg = 'Cannot activate ATM scope: live spot for ' + underlying + ' is unavailable. ' +
+                          (spotData && spotData.diagnosticReason ? spotData.diagnosticReason : 'Check feed connection.');
+                if (errEl) errEl.textContent = msg;
+                if (btn) { btn.disabled = false; btn.textContent = _activeScope ? '↺ Re-scan' : 'Start Scan'; }
+                return;
+            }
+
+            if (btn) btn.textContent = 'Activating…';
+            var payload = {
+                underlying:    underlying,
+                expiry:        expiryParts[0],
+                expiryType:    expiryParts[1],
+                strategy:      $('sc-strategy').value,
+                strikeWindow:  strikeWindow,
+                maxCandidates: parseInt($('sc-max-candidates').value, 10),
+                spotEstimate:  spotEstimate
+            };
+
+            fetchJson(apiBase() + '/api/scope', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(payload)
+            }).then(function (result) {
+                _activeScope = result;
+                renderActiveScopeSummary(result);
+                runScan();
+                startScanPolling();
+            }).catch(function (err) {
+                if (errEl) errEl.textContent = 'Error: ' + err.message;
+            }).then(function () {
+                validateScopeFields();
+            });
+        }).catch(function (err) {
+            if (errEl) errEl.textContent = 'Could not fetch live spot: ' + err.message;
+            if (btn) { btn.disabled = false; btn.textContent = _activeScope ? '↺ Re-scan' : 'Start Scan'; }
+        });
+    }
+
+    function onClearScope() {
+        if (!confirm('Clear scope? This stops polling and unsubscribes all contracts.')) return;
+        fetch(apiBase() + '/api/scope', { method: 'DELETE' }).catch(function () {});
+        _activeScope = null;
+        _lastLegs    = [];
+        stopScanPolling();
+        hideScanSection();
+        renderActiveScopeSummary(null);
+        validateScopeFields();
+    }
+
+    function restoreScope() {
+        fetchJson(apiBase() + '/api/scope')
+            .then(function (data) {
+                if (data && data.activeScope) {
+                    _activeScope = data.activeScope;
+                    renderActiveScopeSummary(data.activeScope);
+                    prefillScopeFields(data.activeScope);
+                    runScan();
+                    startScanPolling();
+                }
+            })
+            .catch(function () {});
+    }
+
+    function prefillScopeFields(scope) {
+        if (!scope) return;
+        if ($('sc-underlying')) $('sc-underlying').value = scope.underlying || 'NIFTY';
+        populateExpiries();
+        setTimeout(function () {
+            var target = (scope.expiry || '') + '|' + (scope.expiryType || '');
+            if ($('sc-expiry')) $('sc-expiry').value = target;
+            if ($('sc-strategy')) $('sc-strategy').value = scope.strategy || 'SHORT_STRANGLE';
+            var sw = scope.strikeWindow;
+            if (sw && $('sc-strike-kind')) {
+                $('sc-strike-kind').value = sw.kind || 'ATM_PCT';
+                updateStrikeVisibility();
+                if (sw.kind === 'ATM_POINTS' && $('sc-strike-pts')) $('sc-strike-pts').value = sw.points || 500;
+                else if ($('sc-strike-pct')) $('sc-strike-pct').value = sw.pct || 4;
+            }
+            if ($('sc-max-candidates')) $('sc-max-candidates').value = scope.maxCandidates || 30;
+            validateScopeFields();
+        }, 50);
+    }
+
+    function renderActiveScopeSummary(scope) {
+        var summaryEl = $('scope-active-summary');
+        var clearBtn  = $('scope-clear-btn');
+        if (!scope) {
+            if (summaryEl) summaryEl.hidden = true;
+            if (clearBtn)  clearBtn.hidden  = true;
+            return;
+        }
+        if (summaryEl) summaryEl.hidden = false;
+        if (clearBtn)  clearBtn.hidden  = false;
+        var text = scope.underlying + ' · ' + scope.expiry + ' · ' + (scope.expiryType || '') +
+                   ' · ' + strategyLabel(scope.strategy);
+        var uni  = scope.instrumentCount != null ? scope.instrumentCount + ' contracts' : '';
+        var st   = $('scope-summary-text');
+        var su   = $('scope-summary-universe');
+        if (st) st.textContent = text;
+        if (su) su.textContent = uni;
+    }
+
+    function strategyLabel(s) {
+        return { SHORT_STRANGLE: 'Short Strangle', SHORT_STRADDLE: 'Short Straddle',
+                 IRON_CONDOR: 'Iron Condor', ANALYSIS_ONLY: 'Analysis Only' }[s] || s || '—';
+    }
+
+    // ── Scan ──────────────────────────────────────────────────────────────────
+    function runScan() {
+        var errEl = $('scope-too-broad');
+        if (errEl) errEl.hidden = true;
+
+        fetchJson(apiBase() + '/api/scope/signal-snapshot')
+            .then(function (data) {
+                _lastLegs = data.legs || [];
+                showScanSection();
+                renderSummaryStrip(data);
+                renderTable(_lastLegs);
+                if (_selectedLegId) {
+                    var leg = _lastLegs.find(function (l) { return l.instrumentId === _selectedLegId; });
+                    if (leg) renderLegDetail(leg, data.strategyNetDelta);
+                }
+            })
+            .catch(function (err) {
+                if (err.message && err.message.indexOf('SCOPE_TOO_BROAD') !== -1) {
+                    var broadEl = $('scope-too-broad');
+                    var msgEl   = $('scope-too-broad-msg');
+                    if (broadEl) broadEl.hidden = false;
+                    if (msgEl)   msgEl.textContent = err.message;
+                } else {
+                    console.warn('[strategy-lab] scan error:', err.message);
+                    // Show the scan section with the error so the user can see it
+                    // (previously the gate stayed visible and the error was silent)
+                    showScanSection();
+                    var errEl2 = $('scope-too-broad');
+                    var msgEl2 = $('scope-too-broad-msg');
+                    if (errEl2) errEl2.hidden = false;
+                    if (msgEl2) msgEl2.textContent = 'Scan error: ' + (err.message || 'unknown error');
+                }
+            });
+    }
+
+    function startScanPolling() {
+        stopScanPolling();
+        _scanTimer = setInterval(runScan, SCAN_POLL_MS);
+    }
+
+    function stopScanPolling() {
+        if (_scanTimer) { clearInterval(_scanTimer); _scanTimer = null; }
+    }
+
+    // ── Show/hide scan section ────────────────────────────────────────────────
+    function showScanSection() {
+        var gate = $('pre-scope-gate');
+        var scan = $('lab-scan-section');
+        if (gate) gate.hidden = true;
+        if (scan) scan.hidden = false;
+    }
+
+    function hideScanSection() {
+        var gate = $('pre-scope-gate');
+        var scan = $('lab-scan-section');
+        if (gate) gate.hidden = false;
+        if (scan) scan.hidden = true;
+    }
+
+    // ── Summary strip ─────────────────────────────────────────────────────────
+    function renderSummaryStrip(data) {
+        var legs = data.legs || [];
+        setEl('sss-strategy',  strategyLabel(data.strategy));
+        setEl('sss-expiry',    (data.underlying || '—') + ' · ' + (data.expiry || '—'));
+        setEl('sss-count',     legs.length + ' contracts');
+        // Fix Issue 12: use server snapshotTs instead of client clock
+        var updatedEl = $('sss-updated');
+        if (updatedEl) {
+            if (data.snapshotTs) {
+                var snapshotDate = new Date(data.snapshotTs);
+                var ageMs = Date.now() - snapshotDate.getTime();
+                var timeStr = snapshotDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                var staleLabel = ageMs > 30000 ? ' ⚠ stale' : '';
+                updatedEl.textContent = timeStr + staleLabel;
+                updatedEl.style.color = (ageMs > 30000) ? 'var(--red, #c00)' : '';
+            } else {
+                updatedEl.textContent = '—';
+            }
+        }
+
+        // Richness: how many legs are premium-rich?
+        var richCount = legs.filter(function (l) { return l.richnessPts != null && l.richnessPts > 0; }).length;
+        var richEl    = $('sss-richness');
+        var richCard  = $('sss-richness-card');
+        if (richEl) richEl.textContent = richCount + ' / ' + legs.length + ' rich';
+        if (richCard) richCard.className = 'sss-card sss-signal ' + (richCount > 0 ? 'sss-good' : 'sss-warn');
+
+        // Net delta
+        var nd = data.strategyNetDelta;
+        var ndEl   = $('sss-net-delta');
+        var ndCard = $('sss-delta-card');
+        if (ndEl) ndEl.textContent = nd != null ? (+nd).toFixed(3) : '—';
+        if (ndCard) ndCard.className = 'sss-card sss-signal ' + (nd != null && Math.abs(nd) < 50 ? 'sss-good' : 'sss-warn');
+
+        // Theta trend
+        var improving = legs.filter(function (l) { return l.thetaPattern === 'IMPROVING'; }).length;
+        var expanding = legs.filter(function (l) { return l.thetaPattern === 'EXPANDING'; }).length;
+        var thetaEl   = $('sss-theta');
+        var thetaCard = $('sss-theta-card');
+        var thetaText = improving + ' improving';
+        if (expanding > 0) thetaText += ', ' + expanding + ' expanding';
+        if (thetaEl) thetaEl.textContent = thetaText;
+        if (thetaCard) thetaCard.className = 'sss-card sss-signal ' + (expanding === 0 && improving > 0 ? 'sss-good' : 'sss-warn');
+    }
+
+    function setEl(id, text) {
+        var el = $(id);
+        if (el) el.textContent = text;
+    }
+
+    // ── Scan table ────────────────────────────────────────────────────────────
+    function renderTable(legs) {
+        var tbody  = $('scan-table-body');
+        var filter = $('lab-type-filter') ? $('lab-type-filter').value : '';
+        var count  = $('lab-count');
+        if (!tbody) return;
+
+        var filtered = filter ? legs.filter(function (l) { return l.optionType === filter; }) : legs;
+        if (count) count.textContent = filtered.length + ' legs';
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-cell">No legs in scan result</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(function (leg) {
+            var rowCls = rowClass(leg.actionStatus);
+            return '<tr class="' + rowCls + '" data-lid="' + esc(leg.instrumentId) + '" style="cursor:pointer;">' +
+                tdContract(leg) +
+                tdPremium(leg) +
+                tdHist(leg) +
+                tdRichness(leg) +
+                tdObsDelta(leg) +
+                tdAdjTheta(leg) +
+                tdThetaPattern(leg) +
+                tdNetDelta(leg) +
+                tdAction(leg) +
+            '</tr>';
+        }).join('');
+
+        // Wire row clicks for leg detail
+        tbody.querySelectorAll('tr[data-lid]').forEach(function (tr) {
+            tr.addEventListener('click', function () {
+                var lid = tr.getAttribute('data-lid');
+                var leg = _lastLegs.find(function (l) { return l.instrumentId === lid; });
+                if (leg) openLegDetail(leg);
+            });
+        });
+    }
+
+    function rowClass(status) {
+        if (status === 'CANDIDATE') return 'row-candidate';
+        if (status === 'AVOID')     return 'row-avoid';
+        return 'row-watch';
+    }
+
+    function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+    function tdContract(l) {
+        var pill = '<span class="option-type-pill ' + (l.optionType === 'CE' ? 'pill-ce' : 'pill-pe') + '">' + esc(l.optionType) + '</span>';
+        return '<td>' + pill + ' <strong>' + esc(l.tradingSymbol) + '</strong>' +
+               '<br><small>Strike ' + fmt2(l.strike) + ' · ' + esc(l.expiryDate || '') + '</small></td>';
+    }
+
+    function tdPremium(l) {
+        return '<td><strong>' + fmt2(l.currentPremium) + '</strong>' +
+               '<br><small>' + fmtTs(l.premiumTimestamp) + '</small></td>';
+    }
+
+    function tdHist(l) {
+        return '<td>' + fmt2(l.historicalAvg) + ' pts</td>';
+    }
+
+    function tdRichness(l) {
+        if (l.richnessPts == null) return '<td>—</td>';
+        var sign  = l.richnessPts >= 0 ? '+' : '';
+        var color = l.richnessPts >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+        return '<td style="' + color + '"><strong>' + sign + fmt2(l.richnessPts) + ' pts</strong>' +
+               '<br><small>' + sign + fmt2(l.richnessPct) + '%</small></td>';
+    }
+
+    function tdObsDelta(l) {
+        var od = l.observedDelta || {};
+        var val = od.d5m != null ? fmt4(od.d5m) : (od.d3m != null ? fmt4(od.d3m) : '—');
+        var rel = od.reliable5m ? '5m ✓' : (od.reliable3m ? '3m ✓' : 'unreliable');
+        return '<td><strong>' + val + '</strong><br><small>' + rel + '</small></td>';
+    }
+
+    function tdAdjTheta(l) {
+        if (l.deltaAdjTheta == null) return '<td>—</td>';
+        var v     = +l.deltaAdjTheta;
+        var sign  = v >= 0 ? '+' : '';
+        var color = v > 0 ? 'color:var(--green)' : (v < -0.5 ? 'color:var(--red)' : '');
+        return '<td style="' + color + '"><strong>' + sign + fmt2(v) + ' pts</strong></td>';
+    }
+
+    function tdThetaPattern(l) {
+        var p   = l.thetaPattern || 'UNKNOWN';
+        var cls = { IMPROVING: 'tp-improving', WEAKENING: 'tp-weakening', EXPANDING: 'tp-expanding' }[p] || '';
+        return '<td><span class="theta-pattern-chip ' + cls + '">' + p + '</span></td>';
+    }
+
+    function tdNetDelta(l) {
+        var nd = l.strategyNetDelta;
+        if (nd == null) return '<td>—</td>';
+        var v   = +nd;
+        var cls, label;
+        if (Math.abs(v) < 20)      { cls = 'delta-neutral';  label = 'Neutral'; }
+        else if (v > 0)            { cls = 'delta-bullish';  label = 'Bullish'; }
+        else                       { cls = 'delta-bearish';  label = 'Bearish'; }
+        return '<td><span class="net-delta-chip ' + cls + '">' + label + '</span>' +
+               '<br><small>' + fmt2(v) + '</small></td>';
+    }
+
+    function tdAction(l) {
+        var s   = l.actionStatus || 'WATCH';
+        var cls = { CANDIDATE: 'action-candidate', WATCH: 'action-watch', AVOID: 'action-avoid' }[s] || 'action-watch';
+        return '<td><span class="action-chip ' + cls + '">' + s + '</span></td>';
+    }
+
+    // ── Leg detail panel ──────────────────────────────────────────────────────
+    function openLegDetail(leg) {
+        _selectedLegId = leg.instrumentId;
+        renderLegDetail(leg, leg.strategyNetDelta);
+        var panel = $('leg-detail-panel');
+        if (panel) panel.hidden = false;
+    }
+
+    function closeLegDetail() {
+        _selectedLegId = null;
+        var panel = $('leg-detail-panel');
+        if (panel) panel.hidden = true;
+    }
+
+    function renderLegDetail(leg, netDelta) {
+        var od = leg.observedDelta || {};
+
+        // Title
+        var titleEl = $('ld-title');
+        if (titleEl) titleEl.textContent = leg.tradingSymbol + ' · ' + leg.optionType + ' · Strike ' + fmt2(leg.strike);
+
+        // Question 1: Premium richness
+        var q1Card = $('tq-richness');
+        var q1Ans  = $('tq-richness-answer');
+        var q1Det  = $('tq-richness-detail');
+        if (q1Ans && q1Det && q1Card) {
+            if (leg.richnessPts == null) {
+                q1Ans.textContent = 'No data'; q1Det.textContent = 'Historical avg unavailable';
+                q1Card.className = 'tq-card tq-warn';
+            } else if (leg.richnessPts > 0) {
+                q1Ans.textContent = 'YES — Rich';
+                q1Det.textContent = '+' + fmt2(leg.richnessPts) + ' pts (' + fmt2(leg.richnessPct) + '%) above 5Y avg';
+                q1Card.className = 'tq-card tq-yes';
+            } else {
+                q1Ans.textContent = 'NO — Cheap';
+                q1Det.textContent = fmt2(leg.richnessPts) + ' pts vs 5Y avg of ' + fmt2(leg.historicalAvg);
+                q1Card.className = 'tq-card tq-no';
+            }
+        }
+
+        // Question 2: Delta near zero
+        var q2Card = $('tq-delta');
+        var q2Ans  = $('tq-delta-answer');
+        var q2Det  = $('tq-delta-detail');
+        if (q2Ans && q2Det && q2Card) {
+            var nd = netDelta != null ? +netDelta : null;
+            if (nd == null) {
+                q2Ans.textContent = 'No data'; q2Det.textContent = 'Delta unavailable';
+                q2Card.className = 'tq-card tq-warn';
+            } else if (Math.abs(nd) < 20) {
+                q2Ans.textContent = 'YES — Near neutral';
+                q2Det.textContent = 'Strategy net delta: ' + fmt2(nd);
+                q2Card.className = 'tq-card tq-yes';
+            } else {
+                q2Ans.textContent = 'NO — Directional';
+                q2Det.textContent = 'Net delta: ' + fmt2(nd) + (nd > 0 ? ' (bullish lean)' : ' (bearish lean)');
+                q2Card.className = 'tq-card tq-no';
+            }
+        }
+
+        // Question 3: Delta-adjusted theta improving
+        var q3Card = $('tq-theta');
+        var q3Ans  = $('tq-theta-answer');
+        var q3Det  = $('tq-theta-detail');
+        if (q3Ans && q3Det && q3Card) {
+            var pat = leg.thetaPattern || 'UNKNOWN';
+            if (pat === 'IMPROVING') {
+                q3Ans.textContent = 'YES — Improving';
+                q3Det.textContent = 'Δ-adj theta: +' + fmt2(leg.deltaAdjTheta) + ' pts (decaying faster than delta)';
+                q3Card.className = 'tq-card tq-yes';
+            } else if (pat === 'EXPANDING') {
+                q3Ans.textContent = 'NO — Expanding';
+                q3Det.textContent = 'Premium expanding beyond delta: ' + fmt2(leg.deltaAdjTheta) + ' pts';
+                q3Card.className = 'tq-card tq-no';
+            } else if (pat === 'WEAKENING') {
+                q3Ans.textContent = 'WEAK — Slowing';
+                q3Det.textContent = 'Decay slowing, theta near zero';
+                q3Card.className = 'tq-card tq-warn';
+            } else {
+                q3Ans.textContent = 'No data'; q3Det.textContent = 'Insufficient window data';
+                q3Card.className = 'tq-card tq-warn';
+            }
+        }
+
+        // Rolling delta windows
+        function setDwCard(idVal, idRel, val, reliable) {
+            var ve = $(idVal); var re = $(idRel);
+            if (ve) ve.textContent = val != null ? fmt4(val) : '—';
+            if (re) re.textContent = reliable ? '✓ reliable' : 'unreliable';
+            var card = ve ? ve.closest('.dw-card') : null;
+            if (card) card.className = 'dw-card' + (reliable ? ' dw-reliable' : ' dw-unreliable');
+        }
+        setDwCard('dw-1m-val',  'dw-1m-rel',  od.d1m,  od.reliable1m);
+        setDwCard('dw-3m-val',  'dw-3m-rel',  od.d3m,  od.reliable3m);
+        setDwCard('dw-5m-val',  'dw-5m-rel',  od.d5m,  od.reliable5m);
+        setDwCard('dw-15m-val', 'dw-15m-rel', od.d15m, od.reliable15m);
+
+        // Raw metrics table
+        function setLd(id, val) { var el = $(id); if (el) el.textContent = val != null ? val : '—'; }
+        setLd('ld-instrument-id',  leg.instrumentId);
+        setLd('ld-current-premium', fmt2(leg.currentPremium));
+        setLd('ld-hist-avg',        fmt2(leg.historicalAvg));
+        setLd('ld-richness-pts',    leg.richnessPts != null ? (leg.richnessPts >= 0 ? '+' : '') + fmt2(leg.richnessPts) : '—');
+        setLd('ld-richness-pts',    leg.richnessPts != null ? (leg.richnessPts >= 0 ? '+' : '') + fmt2(leg.richnessPts) : '—');
+        setLd('ld-richness-pct',    leg.richnessPct != null ? (leg.richnessPct >= 0 ? '+' : '') + fmt2(leg.richnessPct) + '%' : '—');
+        setLd('ld-adj-theta',       leg.deltaAdjTheta != null ? fmt2(leg.deltaAdjTheta) : '—');
+        setLd('ld-net-delta',       netDelta != null ? fmt2(netDelta) : '—');
+        setLd('ld-cohort',          leg.cohortContext || '—');
+        setLd('ld-disqualifier',    leg.disqualifierReason || 'none');
+    }
+
+    boot();
+
+}());
+</script>
+</body>
+</html>

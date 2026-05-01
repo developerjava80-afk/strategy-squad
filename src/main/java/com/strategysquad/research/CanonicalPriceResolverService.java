@@ -16,9 +16,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TimeZone;
 
 /**
  * Canonical backend price resolution for live, post-close, and holiday scenarios.
@@ -432,7 +434,9 @@ public final class CanonicalPriceResolverService {
         }
 
         private static boolean isStale(Instant asOf) {
-            return asOf == null || ChronoUnit.SECONDS.between(asOf, Instant.now()) > 2;
+            // Allow up to 30s before declaring stale — the poller runs every 2s so transient
+            // network delays or GC pauses should not immediately flip the stale flag.
+            return asOf == null || ChronoUnit.SECONDS.between(asOf, Instant.now()) > 30;
         }
     }
 
@@ -475,6 +479,10 @@ public final class CanonicalPriceResolverService {
             this.closeQuoteService = closeQuoteService;
         }
 
+        private static Calendar utcCal() {
+            return Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        }
+
         @Override
         public Optional<InstrumentKey> resolveInstrumentKey(InstrumentKey key) {
             if (key.spot()) {
@@ -507,7 +515,7 @@ public final class CanonicalPriceResolverService {
                             rs.getString("instrument_id"),
                             key.underlying(),
                             rs.getString("trading_symbol"),
-                            rs.getTimestamp("expiry_date").toInstant().atZone(IST).toLocalDate(),
+                            rs.getTimestamp("expiry_date", utcCal()).toInstant().atZone(IST).toLocalDate(),
                             BigDecimal.valueOf(rs.getDouble("strike")),
                             rs.getString("option_type")
                     ));

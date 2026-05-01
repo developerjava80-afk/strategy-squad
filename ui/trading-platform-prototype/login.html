@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Kite Login</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .login-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 1.5rem;
+            padding: 2rem;
+        }
+        .login-card {
+            background: var(--surface, #1e1e2e);
+            border: 1px solid var(--border, #333);
+            border-radius: 0.75rem;
+            padding: 2.5rem 3rem;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+        }
+        .login-card .brand-mark {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--accent, #5a7cf8);
+            display: inline-block;
+            margin-bottom: 0.5rem;
+        }
+        .login-card h1 {
+            font-size: 1.4rem;
+            margin: 0 0 0.25rem;
+        }
+        .login-card p {
+            color: var(--muted, #888);
+            margin: 0 0 2rem;
+            font-size: 0.9rem;
+        }
+        #auth-status-msg {
+            font-size: 0.875rem;
+            color: var(--muted, #888);
+            min-height: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        #auth-status-msg.good  { color: #4caf50; }
+        #auth-status-msg.warn  { color: #ff9800; }
+        #auth-status-msg.error { color: #f44336; }
+        .btn-kite {
+            display: inline-block;
+            background: #387ed1;
+            color: #fff;
+            text-decoration: none;
+            padding: 0.75rem 2rem;
+            border-radius: 0.4rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-kite:hover { background: #2d6ab5; }
+        .btn-kite:disabled { background: #555; cursor: not-allowed; }
+        #manual-token-section {
+            margin-top: 2rem;
+            text-align: left;
+            display: none;
+        }
+        #manual-token-section label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--muted, #888);
+            margin-bottom: 0.4rem;
+        }
+        #manual-token-section input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border, #333);
+            border-radius: 0.3rem;
+            background: var(--bg, #12121c);
+            color: var(--fg, #e0e0e0);
+            font-size: 0.875rem;
+            margin-bottom: 0.6rem;
+        }
+        #manual-token-section button {
+            width: 100%;
+        }
+        .divider {
+            margin: 1.5rem 0 0;
+            font-size: 0.8rem;
+            color: var(--muted, #888);
+        }
+        #redirect-msg {
+            display: none;
+            color: #4caf50;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+<div class="login-page">
+    <div class="login-card">
+        <span class="brand-mark">SS</span>
+        <h1>Strategy Squad</h1>
+        <p>Daily Kite authentication required to start live data feeds</p>
+
+        <div id="auth-status-msg">Checking authentication status…</div>
+
+        <a id="btn-kite-login" class="btn-kite" href="#" style="display:none">
+            Login with Kite (Zerodha)
+        </a>
+
+        <div id="manual-token-section">
+            <p class="divider">— or paste request token manually —</p>
+            <label for="request-token-input">request_token (from Zerodha redirect URL)</label>
+            <input id="request-token-input" type="text" placeholder="abc123xyz…">
+            <button class="btn-kite" id="btn-exchange-token">Exchange Token &amp; Start</button>
+        </div>
+
+        <div id="redirect-msg">Authentication successful — redirecting to dashboard…</div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    const authMsg  = document.getElementById('auth-status-msg');
+    const kiteBtn  = document.getElementById('btn-kite-login');
+    const tokenSec = document.getElementById('manual-token-section');
+    const tokenIn  = document.getElementById('request-token-input');
+    const exchBtn  = document.getElementById('btn-exchange-token');
+    const rdrMsg   = document.getElementById('redirect-msg');
+
+    function showMsg(text, cls) {
+        authMsg.textContent = text;
+        authMsg.className   = cls || '';
+    }
+
+    async function exchangeToken(requestToken) {
+        showMsg('Exchanging request_token…', '');
+        try {
+            const res = await fetch('/api/auth/login', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body:    'requestToken=' + encodeURIComponent(requestToken)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                const detail = data.details ? ' — ' + data.details : '';
+                showMsg('Token exchange failed: ' + (data.error || res.status) + detail, 'error');
+                return;
+            }
+            if (data.authenticatedForToday) {
+                showMsg('Authenticated for ' + data.tradingDate + ' (' + data.userId + ')', 'good');
+                rdrMsg.style.display = 'block';
+                setTimeout(() => { window.location.href = '/index.html'; }, 1500);
+            } else {
+                showMsg(data.message || 'Not authenticated — try logging in again.', 'warn');
+            }
+        } catch (e) {
+            showMsg('Error: ' + e.message, 'error');
+        }
+    }
+
+    async function checkAndInit() {
+        // Check if Zerodha redirected back with request_token in URL
+        const params       = new URLSearchParams(window.location.search);
+        const requestToken = params.get('request_token');
+        const action       = params.get('action');
+
+        if (requestToken) {
+            // Auto-exchange the token from the redirect
+            await exchangeToken(requestToken);
+            return;
+        }
+
+        // Check current auth status
+        try {
+            const res  = await fetch('/api/auth/status');
+            const data = await res.json();
+
+            if (data.authenticatedForToday) {
+                showMsg('Already authenticated for today (' + data.userId + '). Redirecting…', 'good');
+                setTimeout(() => { window.location.href = '/index.html'; }, 800);
+                return;
+            }
+
+            // Not authenticated — show login button with the Kite URL
+            if (data.loginUrl) {
+                kiteBtn.href = data.loginUrl;
+                kiteBtn.style.display = 'inline-block';
+            }
+            showMsg(data.message || 'Login required.', 'warn');
+            tokenSec.style.display = 'block';
+        } catch (e) {
+            showMsg('Cannot reach backend — is the server running?', 'error');
+        }
+    }
+
+    exchBtn.addEventListener('click', () => {
+        const t = (tokenIn.value || '').trim();
+        if (!t) { showMsg('Paste the request_token first.', 'warn'); return; }
+        exchangeToken(t);
+    });
+
+    tokenIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') exchBtn.click();
+    });
+
+    checkAndInit();
+})();
+</script>
+</body>
+</html>

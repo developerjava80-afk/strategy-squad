@@ -19,6 +19,33 @@ public final class KiteInstrumentFilter {
     private KiteInstrumentFilter() {
     }
 
+    /**
+     * @deprecated No longer called. Phase 6 removed the two-phase ATM login; the scope-first
+     * design uses {@link #filter} (full window) which is written to {@code instrument_master},
+     * and instruments are subscribed only when the user activates a scope via
+     * {@code POST /api/scope}. This method is retained only to avoid breaking any
+     * test that may still reference it directly.
+     *
+     * @param niftyStrikeStep    typical strike increment for NIFTY (e.g. 50 or 100)
+     * @param bankNiftyStrikeStep typical strike increment for BANKNIFTY (e.g. 100)
+     */
+    public static List<KiteInstrumentRecord> atmOnly(
+            List<KiteInstrumentRecord> all,
+            LocalDate referenceDate,
+            double niftyAtmEstimate,
+            double bankNiftyAtmEstimate,
+            double niftyStrikeStep,
+            double bankNiftyStrikeStep
+    ) {
+        // ±3 strikes each side = 7 strikes per expiry per type (CE+PE) = ~28 instruments total
+        double niftyWindow = niftyStrikeStep * 3;
+        double bankNiftyWindow = bankNiftyStrikeStep * 3;
+        return filter(all, referenceDate,
+                niftyAtmEstimate, bankNiftyAtmEstimate,
+                niftyWindow, bankNiftyWindow,
+                false, false); // current weekly only, no next weekly/monthly
+    }
+
     public static List<KiteInstrumentRecord> filter(
             List<KiteInstrumentRecord> all,
             LocalDate referenceDate,

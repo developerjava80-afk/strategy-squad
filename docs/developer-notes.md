@@ -50,3 +50,44 @@ review these documents first:
 7. Does it stay aligned with canonical historical truth?
 
 If any answer fails, stop and fix semantics before implementation.
+
+---
+
+## Agentic loop — required reading and rules
+
+Before touching any file under `src/main/java/com/strategysquad/agentic/` or any related test, read:
+
+1. `docs/agentic-live-trading-decision-loop.md` — the full blueprint: agent contracts, state machine, implementation phases.
+2. `docs/options-strategy-domain-contract.md` — Section 16 covers unit and sign rules for all five new agentic output types.
+3. `docs/agentic-loop-implementation-plan.md` — the task-based plan with per-task acceptance criteria.
+
+### Audit trail requirement
+
+Every scanner candidate, decision command, adjustment, profit booking, risk override, and skip must produce a written audit record **before** the action is applied — not after. The audit must include:
+
+- `timestamp`, `mode`, `command_type`, `reason_code` (machine-readable), `explanation` (trader-readable)
+- `risk_guard_decision` and `overridden_by_risk_guard` flag
+- `net_delta_before`, `net_delta_after`, `theta_state`, `theta_progress_ratio`
+- `live_pnl`, `booked_pnl`, `liquidity_score`
+
+An audit record without `reason_code` or `explanation` is incomplete.
+
+### Simulation-first rule
+
+Every new agent service must work in simulation mode (via `SimulationClock` injection) before live mode is activated. Do not wire live market data into a new agent service until:
+
+1. The service has passing unit tests with historical fixtures.
+2. At least one replay test has run successfully end to end.
+3. The decision quality has been reviewed in paper mode.
+
+### Risk Guard gate rule
+
+`RiskGuardService.evaluate()` must be called before **every** `DecisionCommand` is applied — including `HOLD`, `ADD`, and `BOOK_PROFIT`, not just `ENTER`. If the Risk Guard escalates the decision, the final command type must reflect the override, and `overridden_by_risk_guard` must be `true` in the audit record.
+
+### No broker order placement
+
+No code in the `agentic/` package or anywhere else in this repo may call Kite or any other broker order API. This constraint may only be removed by a separately approved written design document. The live-assist gate (Phase 6) is the final boundary: it recommends, the operator confirms, the system does not execute.
+
+### One structure at a time
+
+Do not add multi-structure orchestration until the single-structure loop is stable across at least five simulation replays with reviewed reports. Premature complexity in the builder or orchestrator creates untestable audit state.

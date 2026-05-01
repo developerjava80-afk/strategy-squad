@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -748,7 +750,7 @@ public class StrategyAnalysisService {
                                 rs.getString("option_type"),
                                 rs.getDouble("strike"),
                                 rs.getDouble("last_price"),
-                                rs.getTimestamp("expiry_date").toInstant(),
+                                    rs.getTimestamp("expiry_date", Calendar.getInstance(TimeZone.getTimeZone("UTC"))).toInstant(),
                                 rs.getInt("moneyness_bucket")
                         ));
                     }
@@ -792,7 +794,7 @@ public class StrategyAnalysisService {
                                 rs.getString("option_type"),
                                 rs.getDouble("strike"),
                                 rs.getDouble("last_price"),
-                                rs.getTimestamp("expiry_date").toInstant(),
+                                rs.getTimestamp("expiry_date", Calendar.getInstance(TimeZone.getTimeZone("UTC"))).toInstant(),
                                 rs.getInt("moneyness_bucket")
                         ));
                     }

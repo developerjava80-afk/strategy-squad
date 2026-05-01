@@ -4,8 +4,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Calendar;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TimeZone;
 
 /**
  * Reads option instrument metadata from {@code instrument_master}.
@@ -41,7 +43,7 @@ public class InstrumentMasterLookup {
                         resultSet.getString("underlying"),
                         resultSet.getString("option_type"),
                         resultSet.getBigDecimal("strike"),
-                        resultSet.getTimestamp("expiry_date").toInstant()
+                        resultSet.getTimestamp("expiry_date", Calendar.getInstance(TimeZone.getTimeZone("UTC"))).toInstant()
                 ));
             }
         }

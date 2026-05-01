@@ -1,5 +1,7 @@
 package com.strategysquad.research;
 
+import com.strategysquad.agentic.signal.SignalSnapshotService;
+
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.Duration;
@@ -67,6 +69,12 @@ public final class DeltaAdjustmentService {
 
     private static final MathContext MC = MathContext.DECIMAL64;
     private static final Logger LOG = Logger.getLogger(DeltaAdjustmentService.class.getName());
+
+    /**
+     * Shared instance of the extracted signal computation service.
+     * Used by {@link #computeLegTheta} to delegate empirical delta and theta math.
+     */
+    private static final SignalSnapshotService SIGNAL_SERVICE = new SignalSnapshotService();
 
     public enum UnderlyingDirection { BULLISH, BEARISH, NEUTRAL }
     public enum ProfitAlignment { FAVORABLE, UNFAVORABLE, NEUTRAL }
@@ -916,8 +924,23 @@ public final class DeltaAdjustmentService {
         return outcome;
     }
 
+    /**
+     * Computes per-leg theta assessment by delegating empirical delta and theta
+     * computation to {@link SignalSnapshotService}.
+     *
+     * <p>All math is identical to the original inline implementation — this is an
+     * extract-only refactor. The {@link SignalSnapshotService} owns the canonical
+     * formulas; {@code DeltaAdjustmentService} maps the result back to its own
+     * internal {@link LegThetaAssessment} record, adding the quantity-scaled
+     * {@code actualThetaBenefitQty} field that is specific to this service.
+     */
     private static LegThetaAssessment computeLegTheta(
             LegState leg, BigDecimal currentUnderlyingPrice, Instant evaluationTs) {
+
+        // Guard conditions that result in THETA_UNAVAILABLE — identical to original.
+        // These guards are checked here (not in SignalSnapshotService) because the
+        // THETA_UNAVAILABLE state belongs to DeltaAdjustmentService's internal enum
+        // and has no counterpart in SignalSnapshot.ThetaState.
         if (leg.entryUnderlyingPrice() == null || leg.entryEmpiricalDelta() == null
                 || leg.entryTime() == null || leg.entryPrice() == null
                 || leg.currentPrice() == null || currentUnderlyingPrice == null) {
@@ -934,32 +957,89 @@ public final class DeltaAdjustmentService {
             return new LegThetaAssessment(leg.label(), ThetaState.THETA_UNAVAILABLE,
                     null, null, null, null);
         }
+
+        // Delegate core computation to SignalSnapshotService.
+        // computeFromPrecomputedDeltas carries the same formula:
+        //   actualOptionChange = currentPrice - entryPrice
+        //   expectedDeltaMove  = entryEmpiricalDelta * underlyingChangeSinceEntry
+        //   residual           = actualOptionChange - expectedDeltaMove
+        //   actualThetaBenefit = isShort ? -residual : residual   (for short, benefit = price fell)
+        //   expectedDecay      = entryExpectedDecayRatePerMinute * elapsedMinutes
+        //   thetaProgressRatio = actualThetaBenefit / expectedDecay   (when decay > THETA_MIN_DECAY_THRESHOLD)
+        com.strategysquad.agentic.signal.SignalSnapshot snapshot =
+                SIGNAL_SERVICE.computeFromPrecomputedDeltas(
+                        leg.instrumentId() != null ? leg.instrumentId() : leg.label(),
+                        deriveUnderlying(leg),
+                        leg.optionType() != null ? leg.optionType() : "CE",
+                        leg.strike(),
+                        leg.isShort(),
+                        leg.currentPrice(),
+                        currentUnderlyingPrice,
+                        leg.delta2m(),
+                        leg.delta5m(),
+                        leg.deltaSod(),
+                        leg.entryPrice(),
+                        leg.entryUnderlyingPrice(),
+                        leg.entryEmpiricalDelta(),
+                        leg.entryExpectedDecayRatePerMinute(),
+                        leg.entryTime(),
+                        leg.currentVolume(),
+                        leg.dayAverageVolume(),
+                        leg.stale(),
+                        evaluationTs
+                );
+
+        // Re-derive actualThetaBenefit (not stored on snapshot) for the quantity-scaled field.
+        // Formula is identical to the original inline computation.
         BigDecimal actualOptionChange = leg.currentPrice().subtract(leg.entryPrice());
         BigDecimal expectedDeltaMove = leg.entryEmpiricalDelta().multiply(underlyingChange, MC);
         BigDecimal residual = actualOptionChange.subtract(expectedDeltaMove, MC);
         BigDecimal actualThetaBenefit = leg.isShort() ? residual.negate() : residual;
         BigDecimal actualThetaBenefitQty = actualThetaBenefit.multiply(BigDecimal.valueOf(leg.quantity()), MC);
 
-        BigDecimal expectedDecaySinceEntry = null;
-        BigDecimal thetaProgressRatio = null;
-        if (leg.entryExpectedDecayRatePerMinute() != null) {
-            expectedDecaySinceEntry = leg.entryExpectedDecayRatePerMinute()
-                    .multiply(BigDecimal.valueOf(elapsedMinutes), MC);
-            if (expectedDecaySinceEntry.compareTo(THETA_MIN_DECAY_THRESHOLD) > 0) {
-                thetaProgressRatio = actualThetaBenefit.divide(expectedDecaySinceEntry, MC);
-            }
-        }
+        // Map SignalSnapshot.ThetaState → DeltaAdjustmentService.ThetaState.
+        // DEFENSIVE_EXIT, PROFIT_BOOK, HOLD map 1:1; THETA_UNAVAILABLE is handled
+        // by the guard block above so it will never appear here.
+        ThetaState state = mapThetaState(snapshot.thetaState());
 
-        ThetaState state;
-        if (actualThetaBenefit.compareTo(ZERO) < 0) {
-            state = ThetaState.DEFENSIVE_EXIT;
-        } else if (thetaProgressRatio != null && thetaProgressRatio.compareTo(THETA_CAPTURE_THRESHOLD) >= 0) {
-            state = ThetaState.PROFIT_BOOK;
-        } else {
-            state = ThetaState.HOLD;
-        }
         return new LegThetaAssessment(leg.label(), state, actualThetaBenefit,
-                actualThetaBenefitQty, expectedDecaySinceEntry, thetaProgressRatio);
+                actualThetaBenefitQty, snapshot.expectedDecaySinceEntry(), snapshot.thetaProgressRatio());
+    }
+
+    /**
+     * Maps {@link com.strategysquad.agentic.signal.SignalSnapshot.ThetaState} to
+     * the internal {@link ThetaState} enum.
+     *
+     * <p>{@code THETA_UNAVAILABLE} is never produced by
+     * {@code SignalSnapshotService.computeFromPrecomputedDeltas} — that path is
+     * guarded by the null checks above. If somehow encountered, it maps to
+     * {@code THETA_UNAVAILABLE} defensively.
+     */
+    private static ThetaState mapThetaState(
+            com.strategysquad.agentic.signal.SignalSnapshot.ThetaState signalState) {
+        return switch (signalState) {
+            case DEFENSIVE_EXIT -> ThetaState.DEFENSIVE_EXIT;
+            case PROFIT_BOOK    -> ThetaState.PROFIT_BOOK;
+            case HOLD           -> ThetaState.HOLD;
+        };
+    }
+
+    /**
+     * Derives a best-effort underlying name from the leg label when the instrument ID
+     * does not embed the underlying. Used only for the SignalSnapshotService delegation
+     * call — does not affect any decision logic.
+     */
+    private static String deriveUnderlying(LegState leg) {
+        if (leg.instrumentId() != null) {
+            if (leg.instrumentId().contains("BANKNIFTY")) return "BANKNIFTY";
+            if (leg.instrumentId().contains("NIFTY")) return "NIFTY";
+        }
+        if (leg.label() != null) {
+            String upper = leg.label().toUpperCase();
+            if (upper.contains("BANKNIFTY")) return "BANKNIFTY";
+            if (upper.contains("NIFTY")) return "NIFTY";
+        }
+        return "NIFTY"; // conservative default; doesn't affect computation math
     }
 
     private static ThetaState portfolioThetaState(List<LegThetaAssessment> assessments) {

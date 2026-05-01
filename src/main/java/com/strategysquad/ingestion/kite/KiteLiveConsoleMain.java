@@ -6,6 +6,7 @@ import com.strategysquad.ingestion.live.session.LiveSessionState;
 import com.strategysquad.research.HistoricalReplayService;
 import com.strategysquad.research.LiveMarketService;
 import com.strategysquad.research.ResearchConsoleServer;
+import com.strategysquad.research.ResearchConsoleServer.ScopeGuardrails;
 import com.strategysquad.research.SimulationClock;
 import com.strategysquad.research.StrategyAnalysisService;
 import com.sun.net.httpserver.HttpServer;
@@ -86,13 +87,19 @@ public final class KiteLiveConsoleMain {
         );
         sessionManager.initialize();
 
+        ScopeGuardrails guardrails = new ScopeGuardrails(
+                config.scopeMaxSubscribedTokens(),
+                config.scopeMaxStrikesPerExpiry(),
+                config.scopeMaxCandidates()
+        );
         HttpServer server = ResearchConsoleServer.startServer(
                 port,
                 jdbcUrl,
-                Path.of("ui", "scenario-research").toAbsolutePath().normalize(),
+                Path.of("ui", "trading-platform-prototype").toAbsolutePath().normalize(),
                 liveMarketService,
                 sessionManager,
-                replayService
+                replayService,
+                guardrails
         );
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

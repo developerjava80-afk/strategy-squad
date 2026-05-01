@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TimeZone;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -245,8 +247,24 @@ public final class LiveMarketService {
                 .toList();
     }
 
+    /**
+     * Returns the effective market session phase for {@code underlying}.
+     * If the calendar says HOLIDAY or PREOPEN but the live session state already
+     * has a valid spot price (i.e. Kite is actively delivering data), we override
+     * to LIVE_MARKET so the live-cache path is used instead of historical_db.
+     * This handles weekend / holiday testing sessions.
+     */
+    private MarketSessionStateResolver.SessionState effectiveSessionPhase(String underlying) {
+        MarketSessionStateResolver.SessionState phase = sessionStateResolver.resolveNow();
+        if (phase != MarketSessionStateResolver.SessionState.LIVE_MARKET
+                && sessionState.getLatestSpot(underlying) != null) {
+            phase = MarketSessionStateResolver.SessionState.LIVE_MARKET;
+        }
+        return phase;
+    }
+
     public LiveSpotSnapshot loadSpot(String underlying) {
-        MarketSessionStateResolver.SessionState sessionPhase = sessionStateResolver.resolveNow();
+        MarketSessionStateResolver.SessionState sessionPhase = effectiveSessionPhase(underlying);
         CanonicalPriceResolverService.CanonicalInstrumentPrice canonicalPrice =
                 canonicalPriceResolverService.getCanonicalInstrumentPrice(
                         CanonicalPriceResolverService.InstrumentKey.spot(underlying),
@@ -398,7 +416,7 @@ public final class LiveMarketService {
             boolean persistSnapshot
     ) throws SQLException {
         ResolvedStructure resolved = resolveStructure(connection, definition);
-        MarketSessionStateResolver.SessionState sessionPhase = sessionStateResolver.resolveNow();
+        MarketSessionStateResolver.SessionState sessionPhase = effectiveSessionPhase(definition.underlying());
         Instant resolutionAsOf = currentInstant();
         LiveSpotSnapshot liveSpot = loadSpot(definition.underlying());
         BigDecimal cohortSpot = liveSpot != null && liveSpot.price() != null ? liveSpot.price() : definition.spot();
@@ -536,7 +554,8 @@ public final class LiveMarketService {
                         livePnlSignal.change2mPoints(),
                         livePnlSignal.change5mPoints(),
                         DeltaAdjustmentService.MAX_TOTAL_LOTS,
-                        lastAdjustment
+                        lastAdjustment,
+                        null    // currentUnderlyingPrice — resolved separately via spot lookup
                 )
         );
         Instant lastDeltaAdjustmentTs = deltaAdjustment == null
@@ -716,7 +735,11 @@ public final class LiveMarketService {
                 liveLeg.instrumentId(),
                 liveLeg.instrumentId(),
                 resolveLiveLegExpiryDate(liveLeg),
-                liveLeg.stale() || liveLeg.missing()
+                liveLeg.stale() || liveLeg.missing(),
+                null,   // entryUnderlyingPrice — not tracked in live leg snapshot yet
+                null,   // entryEmpiricalDelta
+                null,   // entryExpectedDecayRatePerMinute
+                null    // entryTime
         );
     }
 
@@ -937,7 +960,7 @@ public final class LiveMarketService {
             stmt.setDouble(4, leg.strike().doubleValue());
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    Timestamp expiryTs = rs.getTimestamp("expiry_date");
+                    Timestamp expiryTs = rs.getTimestamp("expiry_date", Calendar.getInstance(TimeZone.getTimeZone("UTC")));
                                         if (expiryTs == null) {
                                                 continue;
                                         }

@@ -16,6 +16,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -23,17 +24,26 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Downloads the Kite NFO instruments dump, filters for NIFTY/BANKNIFTY options,
  * inserts new instruments into instrument_master, and returns a token-to-id mapping
  * for use by the WebSocket ticker.
  *
- * <p>Run once before market open. Re-run on weekly expiry roll.
+ * <p>The raw NFO CSV is cached in-process for the calendar day so that repeated login
+ * attempts do not re-hit the Kite instruments endpoint and trigger HTTP 429 rate limiting.
  */
 public final class KiteInstrumentsDumpJob {
 
     private static final String NFO_INSTRUMENTS_URL = "https://api.kite.trade/instruments/NFO";
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    private static final AtomicReference<CachedDump> RAW_DUMP_CACHE = new AtomicReference<>(null);
+    private record CachedDump(LocalDate date, List<KiteInstrumentRecord> records) {}
+
+    private static final int MAX_RETRIES = 3;
+    private static final long INITIAL_BACKOFF_MS = 5_000;
 
     private static final String INSERT_INSTRUMENT_SQL =
             "INSERT INTO instrument_master"
@@ -44,18 +54,9 @@ public final class KiteInstrumentsDumpJob {
 
     private static final String UPDATE_INSTRUMENT_SQL =
             "UPDATE instrument_master"
-                    + " SET underlying = ?,"
-                    + "     symbol = ?,"
-                    + "     expiry_date = ?,"
-                    + "     strike = ?,"
-                    + "     option_type = ?,"
-                    + "     lot_size = ?,"
-                    + "     tick_size = ?,"
-                    + "     exchange_token = ?,"
-                    + "     trading_symbol = ?,"
-                    + "     is_active = ?,"
-                    + "     expiry_type = ?,"
-                    + "     updated_at = ?"
+                    + " SET underlying = ?, symbol = ?, expiry_date = ?, strike = ?, option_type = ?,"
+                    + "     lot_size = ?, tick_size = ?, exchange_token = ?, trading_symbol = ?,"
+                    + "     is_active = ?, expiry_type = ?, updated_at = ?"
                     + " WHERE instrument_id = ?";
 
     private static final String SELECT_EXISTING_SQL =
@@ -74,15 +75,44 @@ public final class KiteInstrumentsDumpJob {
     }
 
     /**
-     * Downloads the NFO instruments dump and returns the filtered + loaded result.
+     * Downloads (or retrieves from the day-scoped cache) the full NFO instrument list
+     * filtered to the configured NIFTY/BANKNIFTY strike window.
      *
-     * @param connection           JDBC connection to QuestDB
-     * @param referenceDate        today's date (determines current expiries)
-     * @param niftyAtm             approximate NIFTY spot (for strike window)
-     * @param bankNiftyAtm         approximate BANKNIFTY spot
-     * @param config               live config for window sizes and expiry flags
-     * @return mapping of Kite instrument_token → instrument_id (for ticker adapter)
+     * <p>This is the only instrument-loading path in the scope-first design (Phase 6).
+     * The old ATM-only Phase-1 method has been removed.
      */
+    public List<KiteInstrumentRecord> downloadFull(
+            KiteLiveConfig config,
+            LocalDate referenceDate,
+            double niftyAtm,
+            double bankNiftyAtm
+    ) throws Exception {
+        List<KiteInstrumentRecord> raw = downloadAndParse(config);
+        return KiteInstrumentFilter.filter(raw, referenceDate,
+                niftyAtm, bankNiftyAtm,
+                config.niftyStrikeWindowPoints(),
+                config.bankNiftyStrikeWindowPoints(),
+                config.subscribeNextWeekly(),
+                config.subscribeNextMonthly());
+    }
+
+    /** Build the token to instrument_id map for a filtered instrument list. */
+    public Map<Long, String> buildTokenMap(List<KiteInstrumentRecord> filtered) {
+        return buildTokenMapping(filtered);
+    }
+
+    /** Insert any instruments not already in instrument_master. Returns count of newly inserted rows. */
+    public int insertNew(
+            Connection connection,
+            List<KiteInstrumentRecord> filtered,
+            Map<Long, String> tokenToId,
+            LocalDate referenceDate
+    ) throws SQLException {
+        return upsertNewInstruments(connection, filtered, tokenToId, referenceDate);
+    }
+
+    /** @deprecated Use {@link #downloadFull} + {@link #insertNew} directly. Kept for CLI entry points only. */
+    @Deprecated
     public DumpResult run(
             Connection connection,
             LocalDate referenceDate,
@@ -92,50 +122,79 @@ public final class KiteInstrumentsDumpJob {
     ) throws Exception {
         List<KiteInstrumentRecord> raw = downloadAndParse(config);
         List<KiteInstrumentRecord> filtered = KiteInstrumentFilter.filter(
-                raw,
-                referenceDate,
-                niftyAtm,
-                bankNiftyAtm,
+                raw, referenceDate,
+                niftyAtm, bankNiftyAtm,
                 config.niftyStrikeWindowPoints(),
                 config.bankNiftyStrikeWindowPoints(),
                 config.subscribeNextWeekly(),
                 config.subscribeNextMonthly()
         );
-
         Map<Long, String> tokenToId = buildTokenMapping(filtered);
         int inserted = upsertNewInstruments(connection, filtered, tokenToId, referenceDate);
-
-        System.out.printf("[kite-dump] Downloaded %d NFO rows, filtered to %d, inserted %d new into instrument_master%n",
+        System.out.printf("[kite-dump] NFO rows: %d total, %d after filter, %d newly inserted into instrument_master%n",
                 raw.size(), filtered.size(), inserted);
         return new DumpResult(filtered, tokenToId, inserted);
     }
 
     private List<KiteInstrumentRecord> downloadAndParse(KiteLiveConfig config) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(NFO_INSTRUMENTS_URL))
-                .header("X-Kite-Version", "3")
-                .header("Authorization",
-                        "token " + config.credentials().apiKey()
-                                + ":" + config.credentials().accessToken())
-                .GET()
-                .build();
-        HttpResponse<java.io.InputStream> response = httpClient.send(
-                request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Failed to download NFO instruments dump, HTTP status: " + response.statusCode());
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+
+        CachedDump cached = RAW_DUMP_CACHE.get();
+        if (cached != null && cached.date().equals(today)) {
+            System.out.printf("[kite-dump] Using cached NFO dump from today (%s), %d records%n",
+                    today, cached.records().size());
+            return cached.records();
         }
 
-        List<KiteInstrumentRecord> records = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                KiteInstrumentRecord rec = KiteInstrumentRecord.parseOrNull(line);
-                if (rec != null && rec.isNiftyOrBankNiftyOption()) {
-                    records.add(rec);
+        long backoffMs = INITIAL_BACKOFF_MS;
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(NFO_INSTRUMENTS_URL))
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization",
+                            "token " + config.credentials().apiKey()
+                                    + ":" + config.credentials().accessToken())
+                    .GET()
+                    .build();
+            HttpResponse<java.io.InputStream> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofInputStream());
+
+            if (response.statusCode() == 429) {
+                if (attempt == MAX_RETRIES) {
+                    throw new RuntimeException(
+                            "NFO instruments endpoint rate-limited (HTTP 429) after " + MAX_RETRIES
+                                    + " attempts. Wait a minute and try logging in again.");
+                }
+                System.out.printf("[kite-dump] HTTP 429 rate limit on attempt %d/%d — retrying in %ds%n",
+                        attempt, MAX_RETRIES, backoffMs / 1000);
+                Thread.sleep(backoffMs);
+                backoffMs *= 2;
+                continue;
+            }
+
+            if (response.statusCode() != 200) {
+                throw new RuntimeException(
+                        "Failed to download NFO instruments dump, HTTP status: " + response.statusCode());
+            }
+
+            List<KiteInstrumentRecord> records = new ArrayList<>();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    KiteInstrumentRecord rec = KiteInstrumentRecord.parseOrNull(line);
+                    if (rec != null && rec.isNiftyOrBankNiftyOption()) {
+                        records.add(rec);
+                    }
                 }
             }
+
+            RAW_DUMP_CACHE.set(new CachedDump(today, records));
+            System.out.printf("[kite-dump] Downloaded and cached NFO dump for %s, %d NIFTY/BANKNIFTY option records%n",
+                    today, records.size());
+            return records;
         }
-        return records;
+
+        throw new IllegalStateException("Unexpected exit from download retry loop");
     }
 
     private Map<Long, String> buildTokenMapping(List<KiteInstrumentRecord> filtered) {
@@ -176,13 +235,12 @@ public final class KiteInstrumentsDumpJob {
                     bindUpdate(updateStmt, instrumentId, rec, expiry, referenceDate, now);
                     updateStmt.addBatch();
                     updated++;
-                    continue;
+                } else {
+                    bindInsert(insertStmt, instrumentId, rec, expiry, referenceDate, now);
+                    insertStmt.addBatch();
+                    existing.add(instrumentId);
+                    inserted++;
                 }
-
-                bindInsert(insertStmt, instrumentId, rec, expiry, referenceDate, now);
-                insertStmt.addBatch();
-                existing.add(instrumentId);
-                inserted++;
             }
             if (inserted > 0) {
                 insertStmt.executeBatch();
@@ -190,9 +248,6 @@ public final class KiteInstrumentsDumpJob {
             if (updated > 0) {
                 updateStmt.executeBatch();
             }
-        }
-        if (updated > 0) {
-            System.out.printf("[kite-dump] Refreshed %d existing instrument_master rows with current Kite contract metadata%n", updated);
         }
         return inserted;
     }
@@ -208,7 +263,7 @@ public final class KiteInstrumentsDumpJob {
         stmt.setString(1, instrumentId);
         stmt.setString(2, rec.name());
         stmt.setString(3, rec.name());
-        stmt.setTimestamp(4, Timestamp.valueOf(expiry.atStartOfDay()));
+        stmt.setTimestamp(4, expiryTimestamp(expiry));
         stmt.setDouble(5, rec.strike().doubleValue());
         stmt.setString(6, rec.instrumentType());
         stmt.setInt(7, rec.lotSize());
@@ -216,7 +271,7 @@ public final class KiteInstrumentsDumpJob {
         stmt.setString(9, String.valueOf(rec.instrumentToken()));
         stmt.setString(10, rec.tradingSymbol());
         stmt.setBoolean(11, !expiry.isBefore(referenceDate));
-        stmt.setString(12, deriveExpiryType(expiry));
+        stmt.setString(12, deriveExpiryType(expiry, rec.name()));
         stmt.setTimestamp(13, now);
         stmt.setTimestamp(14, now);
     }
@@ -231,7 +286,7 @@ public final class KiteInstrumentsDumpJob {
     ) throws SQLException {
         stmt.setString(1, rec.name());
         stmt.setString(2, rec.name());
-        stmt.setTimestamp(3, Timestamp.valueOf(expiry.atStartOfDay()));
+        stmt.setTimestamp(3, expiryTimestamp(expiry));
         stmt.setDouble(4, rec.strike().doubleValue());
         stmt.setString(5, rec.instrumentType());
         stmt.setInt(6, rec.lotSize());
@@ -239,9 +294,13 @@ public final class KiteInstrumentsDumpJob {
         stmt.setString(8, String.valueOf(rec.instrumentToken()));
         stmt.setString(9, rec.tradingSymbol());
         stmt.setBoolean(10, !expiry.isBefore(referenceDate));
-        stmt.setString(11, deriveExpiryType(expiry));
+        stmt.setString(11, deriveExpiryType(expiry, rec.name()));
         stmt.setTimestamp(12, now);
         stmt.setString(13, instrumentId);
+    }
+
+    private static Timestamp expiryTimestamp(LocalDate expiry) {
+        return Timestamp.from(expiry.atStartOfDay(IST).toInstant());
     }
 
     private Set<String> loadExistingInstrumentIds(Connection connection) throws SQLException {
@@ -255,7 +314,9 @@ public final class KiteInstrumentsDumpJob {
         return ids;
     }
 
-    private static String deriveExpiryType(LocalDate expiryDate) {
+    private static String deriveExpiryType(LocalDate expiryDate, String underlying) {
+        // BankNifty stopped weekly expiry; all BankNifty contracts are monthly.
+        if ("BANKNIFTY".equals(underlying)) return "MONTHLY";
         LocalDate lastDay = expiryDate.withDayOfMonth(expiryDate.lengthOfMonth());
         while (lastDay.getDayOfWeek() != java.time.DayOfWeek.THURSDAY) {
             lastDay = lastDay.minusDays(1);
@@ -267,6 +328,5 @@ public final class KiteInstrumentsDumpJob {
             List<KiteInstrumentRecord> filteredInstruments,
             Map<Long, String> tokenToInstrumentId,
             int newInstrumentsInserted
-    ) {
-    }
+    ) {}
 }

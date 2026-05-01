@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Squad | Orders</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-page="orders">
+<div class="app-shell">
+    <header class="top-nav" aria-label="Primary">
+        <a class="brand" href="/index.html">
+            <span class="brand-mark">SS</span>
+            <span><strong>Strategy Squad</strong><small>Theta command center</small></span>
+        </a>
+        <nav class="nav-links">
+            <a href="/index.html">Dashboard</a>
+            <a href="/strategy-lab.html">Strategy Lab</a>
+            <a class="active" href="/orders.html">Orders</a>
+            <a href="/testing-analytics.html">Testing</a>
+        </nav>
+        <div class="session-card" id="orders-session-card">
+            <span>Order Desk</span>
+            <strong id="orders-session-state">Loading</strong>
+            <small id="orders-session-detail">Connecting to backend</small>
+        </div>
+    </header>
+
+    <main class="page">
+        <header class="page-header">
+            <div>
+                <p class="kicker">Order Desk</p>
+                <h1>Live NIFTY and BANKNIFTY option execution</h1>
+            </div>
+            <div class="header-actions">
+                <span id="order-api-status" style="font-size:0.8rem;color:var(--muted);"></span>
+                <button class="quiet-button danger-text" type="button" id="btn-halt-session" disabled>Halt Session</button>
+            </div>
+        </header>
+
+        <section class="dashboard-grid">
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Order Context</p>
+                        <h2 id="session-title">NIFTY option desk</h2>
+                    </div>
+                    <span class="status-pill neutral" id="session-status-pill">Waiting</span>
+                </div>
+                <table class="compact-table">
+                    <tbody id="session-summary-table">
+                    <tr><td colspan="2" class="empty-cell">Select an underlying to load live contracts</td></tr>
+                    </tbody>
+                </table>
+            </article>
+
+            <article class="panel order-ticket" id="order-placement-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Order Placement</p>
+                        <h2>NFO index option ticket</h2>
+                    </div>
+                    <span class="status-pill neutral" id="order-mode-pill">Paper</span>
+                </div>
+
+                <form id="order-placement-form" autocomplete="off">
+                    <div class="ticket-grid">
+                        <label class="field">
+                            <span>Trading mode</span>
+                            <select id="order-mode">
+                                <option value="paper">Paper</option>
+                                <option value="real">Real Kite</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Underlying</span>
+                            <select id="order-underlying">
+                                <option value="NIFTY">NIFTY</option>
+                                <option value="BANKNIFTY">BANKNIFTY</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Expiry</span>
+                            <select id="order-expiry">
+                                <option value="">Loading expiries</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Strike</span>
+                            <select id="order-strike">
+                                <option value="">Select expiry first</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Option type</span>
+                            <select id="order-option-type">
+                                <option value="CE">CE</option>
+                                <option value="PE">PE</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Side</span>
+                            <select id="order-transaction-type">
+                                <option value="BUY">Buy</option>
+                                <option value="SELL">Sell</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Order type</span>
+                            <select id="order-type">
+                                <option value="MARKET">Market</option>
+                                <option value="LIMIT">Limit</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Product</span>
+                            <select id="order-product">
+                                <option value="NRML">NRML</option>
+                                <option value="MIS">MIS</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Lots</span>
+                            <input id="order-lots" type="number" min="1" step="1" value="1">
+                        </label>
+                        <label class="field" id="price-field">
+                            <span>Limit price</span>
+                            <input id="order-price" type="number" min="0" step="0.05" placeholder="0.00">
+                        </label>
+                        <label class="field">
+                            <span>Trading symbol</span>
+                            <input id="order-symbol" type="text" readonly placeholder="Select expiry, strike, and type">
+                        </label>
+                        <label class="field">
+                            <span>Lot size</span>
+                            <input id="order-lot-size" type="text" readonly placeholder="--">
+                        </label>
+                        <label class="field">
+                            <span>Current price</span>
+                            <input id="order-current-price" type="text" readonly placeholder="Waiting for quote">
+                        </label>
+                        <label class="field">
+                            <span>Bid / Ask</span>
+                            <input id="order-bid-ask" type="text" readonly placeholder="-- / --">
+                        </label>
+                    </div>
+
+                    <label class="field field-full" id="real-confirm-row" style="margin-top:12px;" hidden>
+                        <span>Live confirmation</span>
+                        <span style="display:flex;gap:8px;align-items:center;text-transform:none;font-size:0.78rem;font-weight:700;color:var(--ink);">
+                            <input id="real-order-confirm" type="checkbox" style="width:auto;min-height:auto;">
+                            I confirm this is a live Kite order
+                        </span>
+                    </label>
+
+                    <div class="ticket-total">
+                        <span>Estimated premium outlay</span>
+                        <strong id="order-notional">--</strong>
+                    </div>
+
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+                        <button class="primary-button" type="submit" id="btn-place-order">Place Paper Order</button>
+                        <button class="quiet-button" type="button" id="btn-reset-order">Reset</button>
+                        <span id="order-form-status" style="font-size:0.78rem;color:var(--muted);"></span>
+                    </div>
+                </form>
+            </article>
+
+            <article class="panel wide-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Execution</p>
+                        <h2>Orders in play</h2>
+                    </div>
+                    <span class="status-pill neutral" id="orders-leg-count">--</span>
+                </div>
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Qty</th>
+                        <th>Entry Price</th>
+                        <th>Current Price</th>
+                        <th>Unbooked PnL</th>
+                        <th>Booked PnL</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody id="order-table-body">
+                    <tr><td colspan="9" class="empty-cell">Loading</td></tr>
+                    </tbody>
+                </table>
+            </article>
+
+            <article class="panel wide-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="kicker">Audit</p>
+                        <h2>Last agent decision</h2>
+                    </div>
+                    <span class="status-pill neutral" id="audit-state-pill">--</span>
+                </div>
+                <div id="order-audit-stream" class="event-stream">
+                    <div style="color:var(--muted);">No decision data</div>
+                </div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    const POLL_MS = 5000;
+    const deskState = {
+        metadata: null,
+        quote: null,
+        executions: []
+    };
+    let apiBasePromise = null;
+
+    function el(id) { return document.getElementById(id); }
+
+    function fmt(val, dec) {
+        if (val == null || isNaN(Number(val))) return '--';
+        return Number(val).toLocaleString('en-IN', {
+            minimumFractionDigits: dec,
+            maximumFractionDigits: dec
+        });
+    }
+
+    function fmtTs(iso) {
+        if (!iso) return '--';
+        try {
+            return new Date(iso).toLocaleTimeString('en-IN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        } catch (_) {
+            return iso;
+        }
+    }
+
+    function money(value) {
+        if (value == null || isNaN(Number(value))) return '--';
+        return 'Rs. ' + Number(value).toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function showApiStatus(message, type) {
+        const node = el('order-api-status');
+        if (!node) return;
+        node.textContent = message || '';
+        node.style.color = type === 'error' ? 'var(--red)' : type === 'success' ? 'var(--accent)' : 'var(--muted)';
+        if (message) {
+            setTimeout(() => {
+                if (node.textContent === message) node.textContent = '';
+            }, 4000);
+        }
+    }
+
+    async function resolveApiBase() {
+        if (apiBasePromise) return apiBasePromise;
+        const candidates = [''];
+        if (window.location.port !== '8080') {
+            candidates.push('http://127.0.0.1:8080');
+        }
+        apiBasePromise = (async function () {
+            for (const base of candidates) {
+                try {
+                    const probe = await fetch(base + '/api/auth/status?_=' + Date.now());
+                    if (probe.ok || probe.status < 500) {
+                        return base;
+                    }
+                } catch (_) {
+                    // Try the next candidate.
+                }
+            }
+            return '';
+        })();
+        return apiBasePromise;
+    }
+
+    async function buildApiUrl(path) {
+        const base = await resolveApiBase();
+        return base + path + (path.includes('?') ? '&' : '?') + '_=' + Date.now();
+    }
+
+    async function fetchJson(url) {
+        const res = await fetch(await buildApiUrl(url));
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || ('HTTP ' + res.status));
+        }
+        return res.json();
+    }
+
+    async function postJson(url, payload) {
+        const base = await resolveApiBase();
+        const res = await fetch(base + url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : {};
+        if (!res.ok) {
+            throw new Error(body.details || body.error || ('HTTP ' + res.status));
+        }
+        return body;
+    }
+
+    function optionalNumber(id) {
+        const node = el(id);
+        if (!node || node.value == null || node.value === '') return null;
+        const parsed = Number(node.value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function setOrderFormStatus(message, type) {
+        const node = el('order-form-status');
+        if (!node) return;
+        node.textContent = message || '';
+        node.style.color = type === 'error' ? 'var(--red)' : type === 'success' ? 'var(--accent)' : 'var(--muted)';
+    }
+
+    function fillSelect(id, values, selectedValue, emptyLabel) {
+        const node = el(id);
+        if (!node) return;
+        const preferred = selectedValue != null ? String(selectedValue) : node.value;
+        node.innerHTML = '';
+        if (!values.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = emptyLabel;
+            node.appendChild(option);
+            return;
+        }
+        values.forEach(value => {
+            const option = document.createElement('option');
+            option.value = String(value);
+            option.textContent = String(value);
+            if (String(value) === preferred) option.selected = true;
+            node.appendChild(option);
+        });
+        if (!node.value && values.length) node.value = String(values[0]);
+    }
+
+    function selectedExpiryBucket() {
+        if (!deskState.metadata || !Array.isArray(deskState.metadata.expiries)) return null;
+        return deskState.metadata.expiries.find(bucket => bucket.expiry === el('order-expiry').value) || null;
+    }
+
+    function needsPrice(orderType) {
+        return orderType === 'LIMIT';
+    }
+
+    function updateContextCard() {
+        const underlying = el('order-underlying').value || 'NIFTY';
+        const quote = deskState.quote && deskState.quote.contract ? deskState.quote : null;
+        const executionCount = Array.isArray(deskState.executions) ? deskState.executions.length : 0;
+        const spot = deskState.metadata ? deskState.metadata.spot : null;
+
+        el('orders-session-state').textContent = underlying;
+        el('orders-session-detail').textContent = quote && quote.contract
+            ? (quote.contract.tradingSymbol || 'Quote loaded')
+            : 'Waiting for contract';
+        el('session-title').textContent = underlying + ' option desk';
+        el('session-status-pill').className = 'status-pill ' + (quote ? 'good' : 'neutral');
+        el('session-status-pill').textContent = quote ? 'Live Quote' : 'Waiting';
+        el('orders-leg-count').textContent = executionCount ? executionCount + ' order' + (executionCount !== 1 ? 's' : '') : '--';
+        el('orders-leg-count').className = 'status-pill ' + (executionCount ? 'good' : 'neutral');
+
+        const rows = [
+            ['Underlying', underlying],
+            ['Spot', spot && spot.price != null ? money(spot.price) : '--'],
+            ['Selected Symbol', quote && quote.contract ? quote.contract.tradingSymbol : '--'],
+            ['Live Source', quote && quote.quote ? quote.quote.source : (spot ? spot.source : '--')],
+            ['Orders In Play', executionCount ? String(executionCount) : '0']
+        ];
+        el('session-summary-table').innerHTML = rows
+            .map(([k, v]) => '<tr><th>' + escapeHtml(k) + '</th><td>' + escapeHtml(v) + '</td></tr>')
+            .join('');
+    }
+
+    function applyMetadata(meta) {
+        deskState.metadata = meta;
+        const expiries = Array.isArray(meta && meta.expiries) ? meta.expiries.map(bucket => bucket.expiry) : [];
+        fillSelect('order-expiry', expiries, expiries[0] || '', 'No expiries available');
+        syncStrikeOptions();
+        updateContextCard();
+    }
+
+    function syncStrikeOptions() {
+        const bucket = selectedExpiryBucket();
+        const strikes = bucket && Array.isArray(bucket.strikes) ? bucket.strikes.map(String) : [];
+        fillSelect('order-strike', strikes, strikes[0] || '', 'No strikes available');
+        el('order-lot-size').value = bucket && bucket.lotSize ? String(bucket.lotSize) : '--';
+    }
+
+    async function loadMetadata() {
+        const underlying = el('order-underlying').value;
+        const meta = await fetchJson('/api/orders/options?underlying=' + encodeURIComponent(underlying));
+        applyMetadata(meta);
+        await loadQuote();
+    }
+
+    function clearQuote() {
+        deskState.quote = null;
+        el('order-symbol').value = '';
+        el('order-current-price').value = 'Waiting for quote';
+        el('order-bid-ask').value = '-- / --';
+        updateOrderFormState();
+        updateContextCard();
+    }
+
+    async function loadQuote() {
+        const underlying = el('order-underlying').value;
+        const expiry = el('order-expiry').value;
+        const strike = el('order-strike').value;
+        const optionType = el('order-option-type').value;
+        if (!underlying || !expiry || !strike || !optionType) {
+            clearQuote();
+            return;
+        }
+        const query = new URLSearchParams({ underlying, expiry, strike, optionType });
+        const quote = await fetchJson('/api/orders/quote?' + query.toString());
+        deskState.quote = quote;
+        el('order-symbol').value = quote.contract ? quote.contract.tradingSymbol || '' : '';
+        el('order-lot-size').value = quote.contract && quote.contract.lotSize ? String(quote.contract.lotSize) : '--';
+        el('order-current-price').value = quote.quote && quote.quote.price != null ? money(quote.quote.price) : 'Unavailable';
+        const bid = quote.quote && quote.quote.bidPrice != null ? fmt(quote.quote.bidPrice, 2) : '--';
+        const ask = quote.quote && quote.quote.askPrice != null ? fmt(quote.quote.askPrice, 2) : '--';
+        el('order-bid-ask').value = bid + ' / ' + ask;
+        updateOrderFormState();
+        updateContextCard();
+    }
+
+    function applyExecutions(rows) {
+        const list = Array.isArray(rows) ? rows : [];
+        deskState.executions = list;
+        if (!list.length) {
+            el('order-table-body').innerHTML = '<tr><td colspan="9" class="empty-cell">No executions yet</td></tr>';
+            updateContextCard();
+            return;
+        }
+        el('order-table-body').innerHTML = list.map(row => {
+            const status = row.status || 'OPEN';
+            const badgeCls = /COMPLETE|OPEN|SUBMITTED/i.test(status)
+                ? 'good'
+                : /REJECTED|CANCELLED/i.test(status)
+                    ? 'warn'
+                    : 'neutral';
+            const unbooked = row.unbookedPnl;
+            const booked = row.bookedPnl;
+            const unbookedCls = unbooked == null ? '' : Number(unbooked) >= 0 ? 'positive' : 'negative';
+            const bookedCls = booked == null ? '' : Number(booked) >= 0 ? 'positive' : 'negative';
+            return '<tr>'
+                + '<td>' + escapeHtml(fmtTs(row.createdAt)) + '</td>'
+                + '<td>' + escapeHtml(row.tradingSymbol || '--') + '</td>'
+                + '<td>' + escapeHtml(row.transactionType || '--') + '</td>'
+                + '<td>' + escapeHtml(String(row.quantity != null ? row.quantity : '--')) + '</td>'
+                + '<td>' + escapeHtml(fmt(row.entryPrice, 2)) + '</td>'
+                + '<td>' + escapeHtml(fmt(row.currentPrice, 2)) + '</td>'
+                + '<td class="' + unbookedCls + '">' + escapeHtml(unbooked == null ? '--' : fmt(unbooked, 2)) + '</td>'
+                + '<td class="' + bookedCls + '">' + escapeHtml(booked == null ? '--' : fmt(booked, 2)) + '</td>'
+                + '<td><span class="status-pill ' + badgeCls + '">' + escapeHtml(status) + '</span></td>'
+                + '</tr>';
+        }).join('');
+        updateContextCard();
+    }
+
+    async function loadExecutions() {
+        const rows = await fetchJson('/api/orders/executions');
+        applyExecutions(rows);
+    }
+
+    function collectOrderPayload() {
+        const payload = {
+            mode: el('order-mode').value,
+            underlying: el('order-underlying').value,
+            expiry: el('order-expiry').value,
+            strike: optionalNumber('order-strike'),
+            optionType: el('order-option-type').value,
+            transactionType: el('order-transaction-type').value,
+            lots: Number(el('order-lots').value || 0),
+            orderType: el('order-type').value,
+            product: el('order-product').value
+        };
+        if (needsPrice(payload.orderType)) {
+            payload.price = optionalNumber('order-price');
+        }
+        return payload;
+    }
+
+    function validateOrderPayload(payload) {
+        if (!payload.underlying || !payload.expiry || !payload.strike || !payload.optionType) {
+            return { ok: false, error: 'Select underlying, expiry, strike, and option type first' };
+        }
+        if (!payload.lots || payload.lots <= 0) {
+            return { ok: false, error: 'Lots must be greater than zero' };
+        }
+        if (needsPrice(payload.orderType) && (!payload.price || payload.price <= 0)) {
+            return { ok: false, error: 'Limit price is required for limit orders' };
+        }
+        if (payload.mode === 'real' && !(el('real-order-confirm') && el('real-order-confirm').checked)) {
+            return { ok: false, error: 'Live confirmation is required for real orders' };
+        }
+        return { ok: true };
+    }
+
+    function updateOrderFormState() {
+        const payload = collectOrderPayload();
+        const validation = validateOrderPayload(payload);
+        const realMode = payload.mode === 'real';
+        const lotSize = deskState.quote && deskState.quote.contract ? Number(deskState.quote.contract.lotSize || 0) : Number(el('order-lot-size').value || 0);
+        const referencePrice = payload.orderType === 'LIMIT'
+            ? Number(payload.price || 0)
+            : Number(deskState.quote && deskState.quote.quote ? deskState.quote.quote.price || 0 : 0);
+        const notional = lotSize > 0 && referencePrice > 0 && payload.lots > 0
+            ? money(referencePrice * lotSize * payload.lots)
+            : '--';
+
+        el('order-mode-pill').textContent = realMode ? 'Real Kite' : 'Paper';
+        el('order-mode-pill').className = 'status-pill ' + (realMode ? 'warn' : 'neutral');
+        el('btn-place-order').textContent = realMode ? 'Place Real Order' : 'Place Paper Order';
+        el('real-confirm-row').hidden = !realMode;
+        el('price-field').hidden = !needsPrice(payload.orderType);
+        el('order-notional').textContent = notional;
+        setOrderFormStatus(validation.ok ? 'Ready' : validation.error, validation.ok ? 'success' : 'error');
+    }
+
+    async function handleOrderSubmit(event) {
+        event.preventDefault();
+        const button = el('btn-place-order');
+        const payload = collectOrderPayload();
+        const validation = validateOrderPayload(payload);
+        if (!validation.ok) {
+            setOrderFormStatus(validation.error, 'error');
+            return;
+        }
+        button.disabled = true;
+        try {
+            const result = await postJson('/api/orders/place', payload);
+            const orderRef = result.externalOrderId || result.executionId || result.orderId || 'accepted';
+            setOrderFormStatus('Order accepted: ' + orderRef, 'success');
+            showApiStatus('Order sent to backend', 'success');
+            await Promise.all([loadExecutions(), loadQuote()]);
+        } catch (e) {
+            setOrderFormStatus('Order failed: ' + e.message, 'error');
+            showApiStatus('Order failed: ' + e.message, 'error');
+        } finally {
+            setTimeout(() => { button.disabled = false; }, 800);
+        }
+    }
+
+    function applyLastDecision(payload) {
+        const decision = payload && payload.lastDecision ? payload.lastDecision : payload;
+        if (!decision) return;
+        el('audit-state-pill').textContent = decision.commandType || '--';
+        el('audit-state-pill').className = 'status-pill ' + (decision.overriddenByRiskGuard ? 'warn' : 'neutral');
+        el('order-audit-stream').innerHTML = '<div style="font-size:0.82rem;display:flex;flex-direction:column;gap:6px;padding:8px 0;">'
+            + '<div style="display:flex;gap:12px;align-items:center;">'
+            + '<span style="color:var(--muted)">' + escapeHtml(fmtTs(decision.issuedTs)) + '</span>'
+            + '<strong style="color:var(--accent)">' + escapeHtml(decision.commandType || '--') + '</strong>'
+            + '<span style="color:var(--muted)">' + escapeHtml(decision.mode || '--') + '</span>'
+            + '</div>'
+            + '<div><b>Reason:</b> ' + escapeHtml(decision.reasonCode || '--') + '</div>'
+            + '<div><b>Explanation:</b> ' + escapeHtml(decision.explanation || '--') + '</div>'
+            + '</div>';
+    }
+
+    function wireOrderForm() {
+        const form = el('order-placement-form');
+        form.addEventListener('submit', handleOrderSubmit);
+
+        el('order-mode').addEventListener('change', updateOrderFormState);
+        el('order-underlying').addEventListener('change', () => {
+            clearQuote();
+            loadMetadata().catch(e => {
+                setOrderFormStatus('Unable to load contracts: ' + e.message, 'error');
+                showApiStatus('Unable to load contracts: ' + e.message, 'error');
+            });
+        });
+        el('order-expiry').addEventListener('change', () => {
+            syncStrikeOptions();
+            loadQuote().catch(e => setOrderFormStatus('Quote load failed: ' + e.message, 'error'));
+        });
+        ['order-strike', 'order-option-type'].forEach(id => {
+            el(id).addEventListener('change', () => {
+                loadQuote().catch(e => setOrderFormStatus('Quote load failed: ' + e.message, 'error'));
+            });
+        });
+        ['order-type', 'order-product', 'order-transaction-type', 'order-lots', 'order-price', 'real-order-confirm']
+            .forEach(id => {
+                el(id).addEventListener('input', updateOrderFormState);
+                el(id).addEventListener('change', updateOrderFormState);
+            });
+
+        el('btn-reset-order').addEventListener('click', () => {
+            form.reset();
+            el('order-underlying').value = 'NIFTY';
+            el('order-option-type').value = 'CE';
+            el('order-transaction-type').value = 'BUY';
+            el('order-product').value = 'NRML';
+            loadMetadata().catch(e => {
+                setOrderFormStatus('Unable to reload contracts: ' + e.message, 'error');
+                showApiStatus('Unable to reload contracts: ' + e.message, 'error');
+            });
+        });
+
+        updateOrderFormState();
+    }
+
+    const haltBtn = el('btn-halt-session');
+    if (haltBtn) {
+        haltBtn.disabled = false;
+        haltBtn.addEventListener('click', async () => {
+            if (!confirm('Halt the active session?')) return;
+            haltBtn.disabled = true;
+            try {
+                const res = await fetch('/api/agentic/halt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: 'operator_halt' })
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showApiStatus('Halt request sent', 'success');
+            } catch (e) {
+                showApiStatus('Halt failed: ' + e.message, 'error');
+            } finally {
+                setTimeout(() => { haltBtn.disabled = false; }, 2000);
+            }
+        });
+    }
+
+    async function refresh() {
+        try {
+            const tasks = [
+                loadExecutions(),
+                fetchJson('/api/agentic/last-decision')
+            ];
+            if (el('order-expiry').value && el('order-strike').value) {
+                tasks.unshift(loadQuote());
+            }
+            const results = await Promise.allSettled(tasks);
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && result.value && result.value.lastDecision !== undefined) {
+                    applyLastDecision(result.value);
+                }
+            });
+            showApiStatus('Updated ' + new Date().toLocaleTimeString('en-IN'), 'info');
+        } catch (e) {
+            showApiStatus('Refresh failed: ' + e.message, 'error');
+        }
+    }
+
+    wireOrderForm();
+    loadMetadata().catch(e => {
+        setOrderFormStatus('Unable to load contracts: ' + e.message, 'error');
+        showApiStatus('Unable to load contracts: ' + e.message, 'error');
+    });
+    loadExecutions().catch(() => {
+        el('order-table-body').innerHTML = '<tr><td colspan="9" class="empty-cell">Execution feed unavailable</td></tr>';
+    });
+    fetchJson('/api/agentic/last-decision').then(applyLastDecision).catch(() => {});
+    setInterval(refresh, POLL_MS);
+})();
+</script>
+</body>
+</html>

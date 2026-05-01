@@ -74,6 +74,19 @@ public final class StrategyRunReportService {
                 .toList();
         List<LegSnapshot> initialLegs = request.initialStructure() == null ? List.of() : request.initialStructure();
         List<LegSnapshot> finalLegs = request.finalStructure() == null ? List.of() : request.finalStructure();
+        List<ScannerRankingEntry> scannerRanking = request.scannerRanking() == null ? List.of() : request.scannerRanking().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparingInt(ScannerRankingEntry::rank))
+                .limit(5)
+                .toList();
+        List<DecisionHistoryEntry> decisionHistory = request.decisionHistory() == null ? List.of() : request.decisionHistory().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(DecisionHistoryEntry::timestampAsInstant, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        List<ProfitBookingEvent> profitBookingEvents = request.profitBookingEvents() == null ? List.of() : request.profitBookingEvents().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(ProfitBookingEvent::timestampAsInstant, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
 
         BigDecimal bookedPnl = request.bookedPnl() != null
                 ? request.bookedPnl()
@@ -171,6 +184,62 @@ public final class StrategyRunReportService {
                 appendBullet(markdown, "Churn guard status", churnStatus(event.reasonCode()));
                 markdown.append('\n');
             }
+        }
+
+        markdown.append("## Scanner Ranking\n");
+        if (scannerRanking.isEmpty()) {
+            markdown.append("_No scanner ranking was captured for this run._\n\n");
+        } else {
+            markdown.append("| Rank | Instrument | Type | Strike | Last Price | Score | Status |\n");
+            markdown.append("| ---: | --- | --- | ---: | ---: | ---: | --- |\n");
+            for (ScannerRankingEntry entry : scannerRanking) {
+                String status = entry.disqualified()
+                        ? "Disqualified: " + md(entry.disqualifierReason())
+                        : "Qualified";
+                markdown.append("| ")
+                        .append(entry.rank()).append(" | ")
+                        .append(md(entry.instrumentId())).append(" | ")
+                        .append(md(entry.optionType())).append(" | ")
+                        .append(num(entry.strike())).append(" | ")
+                        .append(num(entry.lastPrice())).append(" | ")
+                        .append(String.format("%.4f", entry.totalScore())).append(" | ")
+                        .append(md(status)).append(" |\n");
+            }
+            markdown.append('\n');
+        }
+
+        markdown.append("## Decision History\n");
+        if (decisionHistory.isEmpty()) {
+            markdown.append("_No decision history was captured for this run._\n\n");
+        } else {
+            markdown.append("| Timestamp | Command | Reason Code | Explanation |\n");
+            markdown.append("| --- | --- | --- | --- |\n");
+            for (DecisionHistoryEntry entry : decisionHistory) {
+                markdown.append("| ")
+                        .append(md(formatInstant(entry.timestampAsInstant()))).append(" | ")
+                        .append(md(entry.commandType())).append(" | ")
+                        .append(md(entry.reasonCode())).append(" | ")
+                        .append(md(entry.explanation())).append(" |\n");
+            }
+            markdown.append('\n');
+        }
+
+        markdown.append("## Profit Booking\n");
+        if (profitBookingEvents.isEmpty()) {
+            markdown.append("_No profit booking events were recorded for this run._\n\n");
+        } else {
+            markdown.append("| Timestamp | Theta Progress Ratio | Live PnL (pts) | Action | Reason Code | Booked PnL Impact |\n");
+            markdown.append("| --- | ---: | ---: | --- | --- | ---: |\n");
+            for (ProfitBookingEvent event : profitBookingEvents) {
+                markdown.append("| ")
+                        .append(md(formatInstant(event.timestampAsInstant()))).append(" | ")
+                        .append(String.format("%.4f", event.thetaProgressRatio())).append(" | ")
+                        .append(String.format("%.2f", event.livePnl())).append(" | ")
+                        .append(md(event.action())).append(" | ")
+                        .append(md(event.reasonCode())).append(" | ")
+                        .append(money(event.bookedPnlImpact())).append(" |\n");
+            }
+            markdown.append('\n');
         }
 
         markdown.append("## PnL Summary\n");
@@ -456,7 +525,10 @@ public final class StrategyRunReportService {
             BigDecimal totalPnl,
             List<LegSnapshot> initialStructure,
             List<LegSnapshot> finalStructure,
-            List<TimelineEvent> timeline
+            List<TimelineEvent> timeline,
+            List<ScannerRankingEntry> scannerRanking,
+            List<DecisionHistoryEntry> decisionHistory,
+            List<ProfitBookingEvent> profitBookingEvents
     ) {
         public Instant startTimeAsInstant() {
             return parseInstant(startTime);
@@ -523,6 +595,72 @@ public final class StrategyRunReportService {
             BigDecimal thetaScore,
             BigDecimal liquidityScore,
             BigDecimal score
+    ) {
+        public Instant timestampAsInstant() {
+            return parseInstant(timestamp);
+        }
+    }
+
+    /**
+     * One entry in the scanner ranking table — top 5 candidates at entry time.
+     *
+     * @param rank         1-based rank (1 = highest score)
+     * @param instrumentId canonical instrument identifier
+     * @param optionType   CE or PE
+     * @param strike       strike price in NSE index points
+     * @param lastPrice    last traded price at scan time (points)
+     * @param totalScore   weighted composite score (0.0–1.0)
+     * @param disqualified true when the candidate was disqualified
+     * @param disqualifierReason  reason code when disqualified; null otherwise
+     */
+    public record ScannerRankingEntry(
+            int rank,
+            String instrumentId,
+            String optionType,
+            BigDecimal strike,
+            BigDecimal lastPrice,
+            double totalScore,
+            boolean disqualified,
+            String disqualifierReason
+    ) {
+    }
+
+    /**
+     * One row in the decision history table.
+     *
+     * @param timestamp   ISO-8601 UTC string of when the command was issued
+     * @param commandType type of command (ENTER, HOLD, BOOK_PROFIT, SKIP, etc.)
+     * @param reasonCode  machine-readable reason code
+     * @param explanation trader-readable explanation
+     */
+    public record DecisionHistoryEntry(
+            String timestamp,
+            String commandType,
+            String reasonCode,
+            String explanation
+    ) {
+        public Instant timestampAsInstant() {
+            return parseInstant(timestamp);
+        }
+    }
+
+    /**
+     * One profit booking event recorded during the run.
+     *
+     * @param timestamp          ISO-8601 UTC string of when booking was evaluated
+     * @param thetaProgressRatio ratio of expected decay to entry premium (0.0–1.0)
+     * @param livePnl            live PnL at booking time (NSE index points)
+     * @param action             PARTIAL or FULL
+     * @param reasonCode         audit reason code (theta_capture_profit_book_partial / _full)
+     * @param bookedPnlImpact    aggregate booked PnL delta from this event (points); null if not captured
+     */
+    public record ProfitBookingEvent(
+            String timestamp,
+            double thetaProgressRatio,
+            double livePnl,
+            String action,
+            String reasonCode,
+            BigDecimal bookedPnlImpact
     ) {
         public Instant timestampAsInstant() {
             return parseInstant(timestamp);

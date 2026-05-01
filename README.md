@@ -21,12 +21,15 @@ Current verified state:
 Roadmap status:
 - The next product phase is the agentic theta-decay decision loop for NIFTY and BANKNIFTY weekly options.
 - The current codebase has the historical, live overlay, empirical delta, basic theta residual, position-session, simulation, and reporting foundations.
-- The missing layer is the explicit scanner, reusable signal engine, decision agent, position builder, profit-booking agent, global risk guard, and market-day orchestrator.
+- The missing layer is the explicit scanner, reusable signal engine, decision agent, position builder, profit-booking agent, global risk guard, and market-day orchestrator. **None of these have been built yet.** The `agentic/` package does not exist in the source tree.
 - The first implementation target is deterministic simulation and live-assist decisions with full auditability. Broker order execution is not part of the next phase unless approved separately.
+- Implementation is tracked task-by-task in `docs/agentic-loop-implementation-plan.md` (26 tasks across 6 phases).
+- Development progress is visible at `http://localhost:8080/dev-dashboard.html` when the research console is running.
 
 Key functional docs:
 
-- [docs/agentic-live-trading-decision-loop.md](docs/agentic-live-trading-decision-loop.md)
+- [docs/agentic-live-trading-decision-loop.md](docs/agentic-live-trading-decision-loop.md) — blueprint and agent contracts
+- [docs/agentic-loop-implementation-plan.md](docs/agentic-loop-implementation-plan.md) — task-based implementation plan
 - [docs/scenario-research-workstation.md](docs/scenario-research-workstation.md)
 - [docs/live-kite-overlay.md](docs/live-kite-overlay.md)
 - [docs/reports/sample-strategy-run-report.md](docs/reports/sample-strategy-run-report.md)

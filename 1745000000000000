@@ -1,0 +1,9 @@
+Invoke-RestMethod : The remote server returned an error: (400) Bad Request.
+At line:1 char:1
++ Invoke-RestMethod -Uri 'http://localhost:9000/exec' -Method Get -Body ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:Htt 
+   pWebRequest) [Invoke-RestMethod], WebException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShe 
+   ll.Commands.InvokeRestMethodCommand
+ 
