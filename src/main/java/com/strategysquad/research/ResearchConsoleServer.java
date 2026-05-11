@@ -1,23 +1,45 @@
 package com.strategysquad.research;
 
 import com.strategysquad.agentic.decision.DecisionCommand;
+import com.strategysquad.agentic.monitor.AdjustmentMonitorLoop;
+import com.strategysquad.api.handler.MonitorHandler;
 import com.strategysquad.agentic.orchestrator.MarketDayOrchestrator;
 import com.strategysquad.agentic.scanner.CandidateOpportunity;
 import com.strategysquad.agentic.scanner.MorningScannerService;
 import com.strategysquad.agentic.scanner.ScannerQuery;
 import com.strategysquad.agentic.scanner.CandidateScoringEngine;
-import com.strategysquad.ingestion.kite.KiteAuthStatus;
+import com.strategysquad.analysis.DeltaAdjustmentService;
+import com.strategysquad.analysis.DiagnosticsCohortService;
+import com.strategysquad.analysis.DiagnosticsSnapshot;
+import com.strategysquad.analysis.EconomicMetrics;
+import com.strategysquad.analysis.FairValueCohortService;
+import com.strategysquad.analysis.FairValueSnapshot;
+import com.strategysquad.analysis.ForwardOutcomeCohortService;
+import com.strategysquad.analysis.ForwardOutcomeSnapshot;
+import com.strategysquad.analysis.StrategyAnalysisService;
+import com.strategysquad.analysis.TimeframeAnalysisService;
+import com.strategysquad.analysis.TimeframeAnalysisSnapshot;
+import com.strategysquad.ingestion.kite.live.auth.KiteAuthStatus;
 import com.strategysquad.ingestion.kite.KiteLiveSessionManager;
-import com.strategysquad.ingestion.kite.KiteSubscriptionManager;
+import com.strategysquad.ingestion.kite.live.feed.KiteSubscriptionManager;
 import com.strategysquad.ingestion.live.session.LiveStatusReport;
+import com.strategysquad.market.instrument.ExpiryType;
+import com.strategysquad.market.instrument.InstrumentRef;
+import com.strategysquad.market.instrument.StrategyKind;
+import com.strategysquad.order.OptionOrderService;
+import com.strategysquad.order.OrderEventStore;
+import com.strategysquad.order.PositionSessionActionRequest;
+import com.strategysquad.order.PositionSessionActionService;
+import com.strategysquad.order.PositionSessionSnapshot;
+import com.strategysquad.order.ResearchPositionSessionService;
+import com.strategysquad.platform.config.AppConfig;
+import com.strategysquad.platform.db.QuestDbConnectionFactory;
 import com.strategysquad.scope.BootstrapMetadataService;
-import com.strategysquad.scope.ExpiryType;
 import com.strategysquad.scope.ResolvedUniverse;
 import com.strategysquad.scope.Scope;
 import com.strategysquad.scope.ScopeService;
 import com.strategysquad.scope.ScopeStore;
 import com.strategysquad.scope.ScopeValidationException;
-import com.strategysquad.scope.StrategyKind;
 import com.strategysquad.scope.StrikeWindow;
 import com.strategysquad.scope.UniverseResolver;
 import com.sun.net.httpserver.Headers;
@@ -44,9 +66,11 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -56,7 +80,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class ResearchConsoleServer {
     private static final int DEFAULT_PORT = 8080;
-    private static final String DEFAULT_JDBC_URL = "jdbc:postgresql://localhost:8812/qdb";
+    private static final String DEFAULT_JDBC_URL = "jdbc:postgresql://127.0.0.1:8812/qdb?sslmode=disable";
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     /**
      * Phase 7 guardrail caps, passed in from {@code KiteLiveConfig} so they are
@@ -168,7 +193,12 @@ public final class ResearchConsoleServer {
         // Phase 1+3 (scope-first): scope domain services. No Kite calls at construction.
         ScopeStore scopeStore = new ScopeStore(jdbcUrl);
         BootstrapMetadataService bootstrapMetadataService = new BootstrapMetadataService(jdbcUrl, scopeStore);
-        KiteSubscriptionManager subscriptionManager = new KiteSubscriptionManager(guardrails.maxSubscribedTokens());
+        // Reuse the session manager's subscription manager so ScopeService and TickPipeline
+        // share the same instance. When no live session exists (sim/research mode) create a
+        // standalone instance capped by the guardrails.
+        KiteSubscriptionManager subscriptionManager = kiteLiveSessionManager != null
+                ? kiteLiveSessionManager.subscriptionManager()
+                : new KiteSubscriptionManager(guardrails.maxSubscribedTokens());
         ScopeService scopeService = new ScopeService(scopeStore, subscriptionManager);
         UniverseResolver universeResolver = new UniverseResolver(jdbcUrl, guardrails.maxStrikesPerExpiry());
 
@@ -191,13 +221,19 @@ public final class ResearchConsoleServer {
         ResearchPositionSessionService positionSessionService = new ResearchPositionSessionService(positionStoreRoot);
         PositionSessionActionService positionSessionActionService = new PositionSessionActionService();
         StrategyRunReportService strategyRunReportService = new StrategyRunReportService(reportsRoot);
-        OptionOrderService optionOrderService = kiteLiveSessionManager == null
-                ? null
-                : new OptionOrderService(jdbcUrl, kiteLiveSessionManager, manualOrderStoreRoot);
+        boolean simulationMode = kiteLiveSessionManager == null
+            || !com.strategysquad.platform.config.KiteEndpoints.instance().isPersistenceEnabled();
+        OptionOrderService optionOrderService =
+                new OptionOrderService(jdbcUrl, kiteLiveSessionManager, manualOrderStoreRoot);
+        purgePreviousDayTradingArtifacts(optionOrderService, positionSessionService, "startup");
+
+        restoreActiveScopeSubscription(scopeService, universeResolver, subscriptionManager, jdbcUrl);
+        restoreOpenSessionQuoteKeys(positionSessionService, subscriptionManager);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         // Phase 1 — scope bootstrap (no Kite call, always available after login)
         server.createContext("/api/bootstrap/metadata", new BootstrapMetadataHandler(bootstrapMetadataService));
+        server.createContext("/api/client-config", new ClientConfigHandler(simulationMode));
         // Phase 3 — scope activation / deactivation / query
         server.createContext("/api/scope", new ScopeHandler(scopeService, universeResolver));
         // Phase 4 — scoped scanner candidates
@@ -208,7 +244,13 @@ public final class ResearchConsoleServer {
                 new ScopeCandidatesHandler(scopeService, universeResolver, scopedScannerService, scopedScannerQuery, liveMarketService));
         // Phase 5 — bounded live signal snapshot (richness, observed delta, delta-adj theta)
         server.createContext("/api/scope/signal-snapshot",
-                new ScopeSignalSnapshotHandler(jdbcUrl, scopeService, universeResolver, liveMarketService));
+                simulationMode && liveMarketService != null
+                        ? ResearchConsoleRoutes.dummySignalSnapshotHandler(jdbcUrl, scopeService, universeResolver, liveMarketService)
+                        : new ScopeSignalSnapshotHandler(jdbcUrl, scopeService, universeResolver, liveMarketService));
+        if (liveMarketService != null) {
+            server.createContext("/api/dummy/scope/signal-snapshot",
+                    ResearchConsoleRoutes.dummySignalSnapshotHandler(jdbcUrl, scopeService, universeResolver, liveMarketService));
+        }
         server.createContext("/api/fair-value", new FairValueHandler(service));
         server.createContext("/api/timeframe-analysis", new TimeframeAnalysisHandler(timeframeAnalysisService));
         server.createContext("/api/forward-outcomes", new ForwardOutcomeHandler(forwardOutcomeService));
@@ -217,26 +259,77 @@ public final class ResearchConsoleServer {
         server.createContext("/api/workflow/collections", new WorkflowCollectionsHandler(workspaceService));
         server.createContext("/api/workflow/studies/", new WorkflowStudyHandler(workspaceService));
         server.createContext("/api/workflow/studies", new WorkflowStudiesHandler(workspaceService));
-        server.createContext("/api/position-sessions/", new PositionSessionItemHandler(positionSessionService, positionSessionActionService));
-        server.createContext("/api/position-sessions", new PositionSessionsHandler(positionSessionService));
+        // Relink must be registered BEFORE the broader "/api/position-sessions/" prefix so it is
+        // matched specifically. JDK HttpServer uses longest-prefix — explicit path wins.
+        server.createContext("/api/position-sessions/relink", new PositionSessionRelinkHandler(positionSessionService, optionOrderService, subscriptionManager));
+        server.createContext("/api/position-sessions/", new PositionSessionItemHandler(positionSessionService, positionSessionActionService, subscriptionManager));
+        server.createContext("/api/position-sessions", new PositionSessionsHandler(positionSessionService, subscriptionManager, optionOrderService));
         server.createContext("/api/reports/strategy-run", new StrategyRunReportHandler(strategyRunReportService));
+        // Adjustment Monitor — wired always so the Monitor page works in both sim and live mode.
+        // Wire in the in-memory live session state so the monitor can read spot and option prices
+        // directly when the DB has no recent rows (e.g. sim mode, data.persistence.enabled=false).
+        AdjustmentMonitorLoop monitorLoop = new AdjustmentMonitorLoop(
+                positionSessionService, positionSessionActionService, jdbcUrl);
+        monitorLoop.withOrderService(optionOrderService);
         if (liveMarketService != null) {
-            server.createContext("/api/live/status", new LiveStatusHandler(liveMarketService, subscriptionManager, scopeService));
-            server.createContext("/api/live/spot", new LiveSpotHandler(liveMarketService));
-            server.createContext("/api/live/structure", new LiveStructureHandler(liveMarketService));
-            server.createContext("/api/live/structure-trend", new LiveStructureTrendHandler(liveMarketService));
-            server.createContext("/api/live/overlay", new LiveOverlayHandler(liveMarketService));
+            monitorLoop.withLiveSessionState(liveMarketService.sessionState());
+        }
+        new MonitorHandler(monitorLoop).withJdbcUrl(jdbcUrl).register(server);
+        if (liveMarketService != null) {
+            if (simulationMode) {
+                server.createContext("/api/live/status",
+                        new LiveStatusHandler(liveMarketService, subscriptionManager, scopeService));
+                server.createContext("/api/live/spot",
+                        ResearchConsoleRoutes.dummySpotHandler(liveMarketService));
+                server.createContext("/api/live/structure", new LiveStructureHandler(liveMarketService));
+                server.createContext("/api/live/structure-trend", new LiveStructureTrendHandler(liveMarketService));
+                server.createContext("/api/live/overlay", new LiveOverlayHandler(liveMarketService));
+            } else {
+                // Live data endpoints enforced to market hours (09:15–15:30 IST, Mon–Fri).
+                server.createContext("/api/live/status",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new LiveStatusHandler(liveMarketService, subscriptionManager, scopeService)));
+                server.createContext("/api/live/spot",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new LiveSpotHandler(liveMarketService)));
+                server.createContext("/api/live/structure",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new LiveStructureHandler(liveMarketService)));
+                server.createContext("/api/live/structure-trend",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new LiveStructureTrendHandler(liveMarketService)));
+                server.createContext("/api/live/overlay",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new LiveOverlayHandler(liveMarketService)));
+            }
+            server.createContext("/api/dummy/live/spot",
+                    ResearchConsoleRoutes.dummySpotHandler(liveMarketService));
         }
         if (kiteLiveSessionManager != null) {
             server.createContext("/api/auth/status", new AuthStatusHandler(kiteLiveSessionManager));
-            server.createContext("/api/auth/login", new AuthLoginHandler(kiteLiveSessionManager));
+            server.createContext("/api/auth/login",
+                    new AuthLoginHandler(kiteLiveSessionManager, optionOrderService, positionSessionService));
             server.createContext("/api/admin/instruments/refresh", new InstrumentRefreshHandler(kiteLiveSessionManager));
         }
         if (optionOrderService != null) {
-            server.createContext("/api/orders/options", new OrderMetadataHandler(optionOrderService));
-            server.createContext("/api/orders/quote", new OrderQuoteHandler(optionOrderService));
-            server.createContext("/api/orders/place", new OrderPlaceHandler(optionOrderService));
-            server.createContext("/api/orders/executions", new OrderExecutionsHandler(optionOrderService));
+            // Metadata + read-only endpoints — always available so the UI can show
+            // strikes/expiries and historical executions outside market hours.
+            server.createContext("/api/orders/options",  new OrderMetadataHandler(optionOrderService, simulationMode));
+            // Executions: GET to list, PATCH /api/orders/executions/{id} to adjust
+            server.createContext("/api/orders/executions", new OrderExecutionsHandler(optionOrderService, positionSessionService, simulationMode));
+            // Strategy-level monitor view: grouped legs with aggregated delta/theta/PnL/risk.
+            server.createContext("/api/orders/strategies", new OrderStrategiesHandler(optionOrderService, simulationMode));
+            // Aggregated positions: one row per (instrument + side) for the Position Tracking table.
+            server.createContext("/api/orders/positions", new OrderPositionsHandler(optionOrderService, simulationMode));
+            // Append-only audit ledger of order actions (PLACE / REDUCE / CLOSE) for the Order Log table.
+            server.createContext("/api/orders/log", new OrderLogHandler(optionOrderService));
+            if (simulationMode) {
+                server.createContext("/api/orders/quote", new OrderQuoteHandler(optionOrderService, true));
+                server.createContext("/api/orders/place", new OrderPlaceHandler(optionOrderService));
+            } else {
+                // Live-quote endpoint stays gated — needs live ticks.
+                server.createContext("/api/orders/quote",
+                        new com.strategysquad.api.filter.MarketHoursGuard(new OrderQuoteHandler(optionOrderService)));
+                // Place endpoint: real orders are gated to market hours; paper orders bypass
+                // so traders can run simulations & UI walkthroughs after-hours.
+                server.createContext("/api/orders/place",
+                        new PaperAwareGuard(new OrderPlaceHandler(optionOrderService)));
+            }
         }
         if (replayService != null) {
             server.createContext("/api/simulation/start", new SimulationStartHandler(replayService));
@@ -263,11 +356,18 @@ public final class ResearchConsoleServer {
         server.createContext("/", new StaticUiHandler(uiRoot));
         server.setExecutor(Executors.newFixedThreadPool(20));
         server.start();
-        System.out.printf("Strategy Squad server listening on http://localhost:%d%n", port);
+        System.out.println("╔═══════════════════════════════════════════════════╗");
+        System.out.println("║     Strategy Squad Live  —  Live Trading Console  ║");
+        System.out.println("╠═══════════════════════════════════════════════════╣");
+        System.out.printf ("║  Listening  :  http://localhost:%-5d             ║%n", port);
+        System.out.println("║  Mode       :  Kite Live Feed  (09:15–15:30 IST)  ║");
+        System.out.println("║  Sim/Replay :  → strategy-squad-sim (port 8081)   ║");
+        System.out.println("╚═══════════════════════════════════════════════════╝");
+        System.out.printf("Strategy Squad LIVE server on http://localhost:%d%n", port);
         System.out.printf("Serving UI from %s%n", uiRoot);
         System.out.printf("Using JDBC URL %s%n", jdbcUrl);
         if (liveMarketService != null) {
-            System.out.println("Live Kite overlay endpoints enabled under /api/live/*");
+            System.out.println("Live Kite overlay endpoints enabled under /api/live/* (market hours only)");
         }
         if (kiteLiveSessionManager != null) {
             System.out.println("Daily Kite login endpoints enabled under /api/auth/*");
@@ -276,6 +376,95 @@ public final class ResearchConsoleServer {
             System.out.println("Simulation replay endpoints enabled under /api/simulation/*");
         }
         return server;
+    }
+
+    private static void purgePreviousDayTradingArtifacts(
+            OptionOrderService optionOrderService,
+            ResearchPositionSessionService positionSessionService,
+            String trigger
+    ) {
+        LocalDate today = LocalDate.now(IST);
+        int deletedOrders = 0;
+        int deletedSessions = 0;
+        try {
+            if (optionOrderService != null) {
+                deletedOrders = optionOrderService.purgeExecutionsBefore(today, IST);
+            }
+            if (positionSessionService != null) {
+                deletedSessions = positionSessionService.deleteSessionsBefore(today, IST);
+            }
+            if (deletedOrders > 0 || deletedSessions > 0) {
+                System.out.printf(
+                        "[trading-cleanup] %s purged previous-day artifacts: orders=%d sessions=%d%n",
+                        trigger,
+                        deletedOrders,
+                        deletedSessions);
+            }
+        } catch (IOException ex) {
+            System.err.printf(
+                    "[trading-cleanup] %s could not purge previous-day artifacts: %s%n",
+                    trigger,
+                    ex.getMessage());
+        }
+    }
+
+    private static void restoreActiveScopeSubscription(
+            ScopeService scopeService,
+            UniverseResolver universeResolver,
+            KiteSubscriptionManager subscriptionManager,
+            String jdbcUrl
+    ) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        try {
+            scopeService.restoreFromStore(today);
+            Optional<ScopeStore.StoredScope> activeOpt = scopeService.getActiveScope();
+            if (activeOpt.isEmpty()) {
+                return;
+            }
+
+            Scope scope = activeOpt.get().scope();
+            Optional<Double> spotEstimateOpt = loadLatestSpotEstimate(jdbcUrl, scope.underlying());
+            if (requiresSpotEstimate(scope.strikeWindow()) && spotEstimateOpt.isEmpty()) {
+                System.err.printf(
+                        "[scope-service] Could not restore Kite option subscription for %s: no live spot estimate.%n",
+                        scope.toScopeId(today));
+                return;
+            }
+
+            ResolvedUniverse universe = universeResolver.resolve(scope, spotEstimateOpt.orElse(0.0));
+            subscriptionManager.bind(universe.instruments());
+            System.out.printf(
+                    "[scope-service] Restored Kite option subscription for %s universe_size=%d subscribed=%d%n",
+                    activeOpt.get().scopeId(),
+                    universe.instruments().size(),
+                    subscriptionManager.subscribedCount());
+        } catch (Exception ex) {
+            System.err.println("[scope-service] Active scope subscription restore failed: " + ex.getMessage());
+        }
+    }
+
+    private static boolean requiresSpotEstimate(StrikeWindow strikeWindow) {
+        return strikeWindow instanceof StrikeWindow.AtmPct
+                || strikeWindow instanceof StrikeWindow.AtmPoints;
+    }
+
+    private static Optional<Double> loadLatestSpotEstimate(String jdbcUrl, String underlying) throws SQLException {
+        String sql = "SELECT last_price FROM spot_live "
+                + "WHERE underlying = ? "
+                + "ORDER BY exchange_ts DESC LIMIT 1";
+        try (Connection conn = QuestDbConnectionFactory.open(jdbcUrl);
+             java.sql.PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, underlying);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    double price = rs.getDouble(1);
+                    if (!rs.wasNull() && price > 0.0) {
+                        return Optional.of(price);
+                    }
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     // =========================================================================
@@ -291,6 +480,41 @@ public final class ResearchConsoleServer {
      *
      * <p>Makes no Kite API calls. Always available after application start.
      */
+    /**
+     * GET /api/client-config
+     *
+     * <p>Small shared config used by every page so Strategy Lab, Orders and the
+     * dashboard use the same server and default feed source.
+     */
+    private static final class ClientConfigHandler implements HttpHandler {
+        private final boolean simulationMode;
+
+        private ClientConfigHandler(boolean simulationMode) {
+            this.simulationMode = simulationMode;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            String key = AppConfig.load().getApiInternalKey();
+            String mode = simulationMode ? "sim" : "live";
+            String defaultSource = simulationMode ? "DUMMY" : "KITE";
+            sendJson(exchange, 200,
+                    "{\"internalKey\":\"" + escapeJson(key)
+                            + "\",\"mode\":\"" + mode
+                            + "\",\"feedSourceDefault\":\"" + defaultSource
+                            + "\",\"apiBase\":\"\"}");
+        }
+    }
+
     private static final class BootstrapMetadataHandler implements HttpHandler {
 
         private final BootstrapMetadataService service;
@@ -786,10 +1010,18 @@ public final class ResearchConsoleServer {
                     return;
                 }
 
-                // Load cohort map for scoring
+                // Load cohort map for scoring — DTE-range filtered so the aggregated
+                // fallback average reflects only historical contracts with similar DTE
+                // (prevents long-DTE records from inflating the average price).
+                int dteDays = (int) java.time.temporal.ChronoUnit.DAYS.between(
+                        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")),
+                        scope.expiry());
+                int approxTimeBucket = Math.max(0, dteDays) * 96; // calendar days → 15-min slots
                 java.util.Map<CandidateScoringEngine.CohortKey,
                         com.strategysquad.aggregation.OptionsContextBucket> cohortMap =
-                        scannerQuery.loadCohortMap(scope.underlying());
+                        scannerQuery.loadCohortMap(scope.underlying(),
+                                Math.max(0, approxTimeBucket - 192),
+                                approxTimeBucket + 192);
 
                 // Run scoped scan
                 java.util.List<CandidateOpportunity> candidates =
@@ -843,6 +1075,9 @@ public final class ResearchConsoleServer {
                   .append("\"lastPrice\":").append(c.lastPrice()).append(",")
                   .append("\"bidPrice\":").append(c.bidPrice()).append(",")
                   .append("\"askPrice\":").append(c.askPrice()).append(",")
+                  .append("\"historicalAvgPrice\":").append(c.historicalAvgPrice() != null
+                          ? String.format(java.util.Locale.ROOT, "%.2f", c.historicalAvgPrice())
+                          : "null").append(",")
                   .append("\"premiumRichnessPct\":").append(String.format(java.util.Locale.ROOT, "%.4f", c.premiumRichnessPct())).append(",")
                   .append("\"liquidityScore\":").append(String.format(java.util.Locale.ROOT, "%.4f", c.liquidityScore())).append(",")
                   .append("\"thetaOpportunityScore\":").append(String.format(java.util.Locale.ROOT, "%.4f", c.thetaOpportunityScore())).append(",")
@@ -975,20 +1210,28 @@ public final class ResearchConsoleServer {
                 ScopeStore.StoredScope stored = activeOpt.get();
                 Scope scope = stored.scope();
 
-                // Fix Issue 2: re-resolve bounded universe using canonical live spot for
-                // ATM windows rather than 0.0, which produced an empty/wrong universe.
+                // Re-resolve bounded universe using canonical live spot for ATM windows.
                 double reResolveSpot = resolveSpotForScope(scope);
-                if (reResolveSpot <= 0.0 && requiresSpot(scope.strikeWindow())) {
-                    sendJson(exchange, 503,
-                            "{\"error\":\"SPOT_UNAVAILABLE\","
-                            + "\"details\":\"Cannot re-resolve ATM scope: live spot for "
-                            + escapeJson(scope.underlying()) + " is unavailable. "
-                            + "Retry when the feed is connected.\"}");
-                    return;
-                }
                 ResolvedUniverse universe;
                 try {
-                    universe = universeResolver.resolve(scope, reResolveSpot);
+                    if (reResolveSpot > 0.0 || !requiresSpot(scope.strikeWindow())) {
+                        universe = universeResolver.resolve(scope, reResolveSpot);
+                    } else {
+                        // Outside market hours / live feed unavailable: load instruments
+                        // directly from instrument_master so historical context is still shown.
+                        // Live premium fields will be null; historical averages still populate.
+                        java.util.List<InstrumentRef> fallbackRefs = loadInstrumentsFromMaster(scope);
+                        if (fallbackRefs.isEmpty()) {
+                            sendJson(exchange, 503,
+                                    "{\"error\":\"SPOT_UNAVAILABLE\","
+                                    + "\"details\":\"Live spot unavailable and no instruments found in "
+                                    + "instrument_master for " + escapeJson(scope.underlying())
+                                    + " " + escapeJson(scope.expiry().toString()) + ". "
+                                    + "Refresh instrument master or retry during market hours.\"}");
+                            return;
+                        }
+                        universe = new ResolvedUniverse(scope, fallbackRefs, false, null);
+                    }
                 } catch (ScopeValidationException ex) {
                     sendJson(exchange, 409,
                             "{\"error\":\"SCOPE_EXPIRED\","
@@ -1004,7 +1247,7 @@ public final class ResearchConsoleServer {
                 // triggered a spurious 422. The real overflow guard is in UniverseResolver.
 
                 // Bounded universe — InstrumentRef list carries all metadata (no extra DB call needed)
-                java.util.List<com.strategysquad.scope.InstrumentRef> refs = universe.instruments();
+                java.util.List<InstrumentRef> refs = universe.instruments();
 
                 if (refs.isEmpty()) {
                     // Pre-market or no instruments — return empty legs
@@ -1015,10 +1258,13 @@ public final class ResearchConsoleServer {
                 Instant now = Instant.now();
                 java.util.List<LegSignal> legs = computeLegs(scope, refs, now);
 
-                double strategyNetDelta = legs.stream()
+                boolean hasDelta = legs.stream().anyMatch(l -> l.d5m() != null);
+                Double strategyNetDelta = hasDelta
+                    ? legs.stream()
                         .filter(l -> l.d5m() != null)
                         .mapToDouble(l -> l.d5m() * l.lotSize())
-                        .sum();
+                        .sum()
+                    : null;
 
                 sendJson(exchange, 200,
                         buildResponse(stored, universe, legs, strategyNetDelta, now));
@@ -1041,7 +1287,7 @@ public final class ResearchConsoleServer {
          */
         private java.util.List<LegSignal> computeLegs(
                 Scope scope,
-                java.util.List<com.strategysquad.scope.InstrumentRef> refs,
+                java.util.List<InstrumentRef> refs,
                 Instant now
         ) throws java.sql.SQLException {
 
@@ -1049,14 +1295,14 @@ public final class ResearchConsoleServer {
 
             // Build instrument ID list from bounded universe only
             java.util.List<String> instrumentIds = refs.stream()
-                    .map(com.strategysquad.scope.InstrumentRef::instrumentId)
+                    .map(InstrumentRef::instrumentId)
                     .toList();
 
             // Build a lookup map from instrumentId → InstrumentRef (carries all metadata)
-            java.util.Map<String, com.strategysquad.scope.InstrumentRef> refMap = new java.util.HashMap<>();
-            for (com.strategysquad.scope.InstrumentRef r : refs) refMap.put(r.instrumentId(), r);
+            java.util.Map<String, InstrumentRef> refMap = new java.util.HashMap<>();
+            for (InstrumentRef r : refs) refMap.put(r.instrumentId(), r);
 
-            try (Connection conn = DriverManager.getConnection(jdbcUrl)) {
+            try (Connection conn = com.strategysquad.platform.db.QuestDbConnectionFactory.open(jdbcUrl)) {
 
                 // 1. Load live snapshots for each instrument (latest tick)
                 java.util.Map<String, LiveRow> liveRows = fetchLiveRows(conn, scope.underlying(), instrumentIds, now);
@@ -1074,7 +1320,7 @@ public final class ResearchConsoleServer {
                     LiveRow live                             = liveRows.get(iid);
                     RollingWindows rw                        = windows.get(iid);
                     Double hist                              = histAvg.get(iid);
-                    com.strategysquad.scope.InstrumentRef r = refMap.get(iid);
+                    InstrumentRef r = refMap.get(iid);
 
                     // All metadata from InstrumentRef (no extra DB call)
                     String optionType    = r != null ? r.optionType()                    : (iid.endsWith("_CE") ? "CE" : "PE");
@@ -1246,12 +1492,16 @@ public final class ResearchConsoleServer {
                          "  AND instrument_id IN (" + inClause + ") " +
                          "LATEST ON exchange_ts PARTITION BY instrument_id";
 
+            // Read exchange_ts via UTC calendar so QuestDB's UTC-stored timestamps
+            // are not silently shifted by the JVM default zone (was producing a 5h30m
+            // IST offset that made every leg look stale).
+            java.util.Calendar utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
             try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)) {
                 while (rs.next()) {
                     String iid      = rs.getString("instrument_id");
                     double lastPrice = rs.getDouble("last_price");
-                    long   tsMs      = rs.getTimestamp("exchange_ts") != null
-                            ? rs.getTimestamp("exchange_ts").getTime() : 0L;
+                    java.sql.Timestamp ts = rs.getTimestamp("exchange_ts", utcCal);
+                    long   tsMs      = ts != null ? ts.getTime() : 0L;
                     result.put(iid, new LiveRow(lastPrice, tsMs));
                 }
             } catch (java.sql.SQLException ex) {
@@ -1276,6 +1526,16 @@ public final class ResearchConsoleServer {
             java.util.Map<String, RollingWindows> result = new java.util.HashMap<>();
             if (ids.isEmpty()) return result;
 
+            // Δ metrics (1m/3m/5m/15m) are intraday-only.
+            // Formula: Δ = (premium_now - premium_Xm_ago) / (spot_now - spot_Xm_ago)
+            // We ONLY use ticks from today's session (exchange_ts >= today's market open
+            // in UTC = today 03:45 UTC = 09:15 IST). Ticks from a prior session must
+            // never pollute the rolling windows — a 5m window crossing midnight is
+            // meaningless as a delta signal.
+            java.time.LocalDate todayIst = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+            // Market open IST = 09:15 → UTC = 03:45
+            String sessionStartUtc = todayIst + "T03:45:00.000000Z";
+
             long nowMs  = now.toEpochMilli();
             long ago1m  = nowMs - 60_000L;
             long ago3m  = nowMs - 180_000L;
@@ -1293,19 +1553,23 @@ public final class ResearchConsoleServer {
                     .map(id -> "'" + id.replace("'", "''") + "'")
                     .collect(java.util.stream.Collectors.joining(","));
 
-            // Option prices at each time anchor — use the closest tick at-or-before each window
-            String[] windowSuffixes = {"1m", "3m", "5m", "15m"};
-            long[]   windowAgoMs   = { ago1m, ago3m, ago5m, ago15m };
-            int[]    windowIdx     = { 0, 1, 2, 3 };
+            // For each window: find the closest tick at-or-before (now - Xm) that is
+            // ALSO within today's session. If no such tick exists the window stays NaN
+            // and that delta column renders as "—" in the UI.
+            long[]   windowAgoMs = { ago1m, ago3m, ago5m, ago15m };
+            int[]    windowIdx   = { 0, 1, 2, 3 };
 
             for (int w = 0; w < 4; w++) {
                 long cutoffMs = windowAgoMs[w];
+                // Skip window if the cutoff is before today's session start
+                if (cutoffMs < java.time.Instant.parse(sessionStartUtc).toEpochMilli()) continue;
                 String cutoffTs = new java.sql.Timestamp(cutoffMs).toInstant().toString();
                 String sqlOpt =
                         "SELECT instrument_id, last_price " +
                         "FROM options_live_enriched " +
                         "WHERE underlying = '" + underlying.replace("'", "''") + "' " +
                         "  AND instrument_id IN (" + inClause + ") " +
+                        "  AND exchange_ts >= '" + sessionStartUtc + "' " +
                         "  AND exchange_ts <= '" + cutoffTs + "' " +
                         "LATEST ON exchange_ts PARTITION BY instrument_id";
                 try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlOpt)) {
@@ -1321,8 +1585,8 @@ public final class ResearchConsoleServer {
                 }
             }
 
-            // Spot prices at each time anchor from spot_live
-            double[] spotByWindow = fetchSpotAtWindows(conn, underlying, now, windowAgoMs);
+            // Spot prices at each time anchor from spot_live (today's session only)
+            double[] spotByWindow = fetchSpotAtWindows(conn, underlying, now, windowAgoMs, sessionStartUtc);
             double spotNow = spotByWindow[4]; // index 4 = current
 
             for (String id : ids) {
@@ -1344,19 +1608,21 @@ public final class ResearchConsoleServer {
         }
 
         /**
-         * Fetches spot prices at each rolling time anchor from {@code spot_live}.
+         * Fetches spot prices at each rolling time anchor from {@code spot_live},
+         * restricted to today's session (exchange_ts >= sessionStartUtc).
          * Returns array: [spot1mAgo, spot3mAgo, spot5mAgo, spot15mAgo, spotNow]
          */
         private double[] fetchSpotAtWindows(
-                Connection conn, String underlying, Instant now, long[] agoMs
+                Connection conn, String underlying, Instant now, long[] agoMs,
+                String sessionStartUtc
         ) throws java.sql.SQLException {
             double[] spots = { Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN };
-            long nowMs = now.toEpochMilli();
 
-            // Current spot
+            // Current spot — latest tick from today's session
             try {
                 String sqlNow = "SELECT last_price FROM spot_live " +
                                 "WHERE underlying = '" + underlying.replace("'", "''") + "' " +
+                                "  AND exchange_ts >= '" + sessionStartUtc + "' " +
                                 "LATEST ON exchange_ts PARTITION BY underlying";
                 try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlNow)) {
                     if (rs.next()) spots[4] = rs.getDouble("last_price");
@@ -1365,13 +1631,16 @@ public final class ResearchConsoleServer {
                 if (ex.getMessage() == null || !ex.getMessage().contains("does not exist")) throw ex;
             }
 
-            // Historical window anchors
+            long sessionStartMs = java.time.Instant.parse(sessionStartUtc).toEpochMilli();
+            // Historical window anchors — only within today's session
             for (int i = 0; i < agoMs.length; i++) {
+                if (agoMs[i] < sessionStartMs) continue; // window predates today's open → skip
                 String cutoffTs = new java.sql.Timestamp(agoMs[i]).toInstant().toString();
                 try {
                     String sqlHist =
                             "SELECT last_price FROM spot_live " +
                             "WHERE underlying = '" + underlying.replace("'", "''") + "' " +
+                            "  AND exchange_ts >= '" + sessionStartUtc + "' " +
                             "  AND exchange_ts <= '" + cutoffTs + "' " +
                             "LATEST ON exchange_ts PARTITION BY underlying";
                     try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlHist)) {
@@ -1386,14 +1655,18 @@ public final class ResearchConsoleServer {
         }
 
         /**
-         * Historical cohort averages from {@code options_context_buckets}.
+         * Historical cohort averages from {@code options_enriched}.
          *
-         * <p>Schema: underlying (SYMBOL), option_type (SYMBOL), time_bucket_15m (INT),
-         * moneyness_bucket (INT), avg_option_price (DOUBLE), avg_volume (DOUBLE), sample_count (LONG).
+         * <p>Queries {@code options_enriched} directly using percentage-based moneyness
+         * matching (±1% of current moneyness_pct) and a ±1-day DTE window around the
+         * current {@code time_bucket_15m}. The raw price is normalized by the
+         * {@code underlying_price} (spot) ratio so that level changes across years
+         * (e.g. NIFTY 8000 → 24000) don't distort the comparison:
+         * {@code historicalAvg = avg(last_price / underlying_price) * currentSpot}.
          *
-         * <p>Match key: underlying + option_type + moneyness_bucket + time_bucket_15m (nearest slot).
-         * Uses the current time-of-day 15m bucket and the per-instrument moneyness_bucket from
-         * {@code options_live_enriched}. Only queries bounded instrument IDs.
+         * <p>This replaces the old {@code options_context_buckets} lookup, which used
+         * point-based {@code moneyness_bucket} values that only match data from the same
+         * market-price era.
          */
         private java.util.Map<String, Double> fetchHistoricalAvg(
                 Connection conn, String underlying,
@@ -1406,54 +1679,74 @@ public final class ResearchConsoleServer {
                     .map(id -> "'" + id.replace("'", "''") + "'")
                     .collect(java.util.stream.Collectors.joining(","));
 
-            // Step 1: get latest option_type and moneyness_bucket (INT) per instrument from
-            // options_live_enriched. Also get time_bucket_15m for the current 15m cohort slot.
-            // key: instrumentId → int[]{ optionTypeCe0Pe1, moneynessBucket, timeBucket15m }
-            java.util.Map<String, int[]> cohortKeys = new java.util.HashMap<>();
+            // Step 1: get latest option_type, moneyness_pct, time_bucket_15m, and
+            // underlying_price (current spot) per instrument from options_live_enriched.
+            // key: instrumentId → double[]{ moneynessPct, timeBucket15m(as double), currentSpot }
+            // with option_type stored separately.
+            java.util.Map<String, String>   otMap   = new java.util.HashMap<>();
+            java.util.Map<String, double[]> liveCtx = new java.util.HashMap<>();
             try {
                 String sqlEnriched =
-                        "SELECT instrument_id, option_type, moneyness_bucket, time_bucket_15m " +
+                        "SELECT instrument_id, option_type, moneyness_pct, time_bucket_15m, underlying_price " +
                         "FROM options_live_enriched " +
                         "WHERE underlying = '" + underlying.replace("'","''") + "' " +
                         "  AND instrument_id IN (" + inClause + ") " +
                         "LATEST ON exchange_ts PARTITION BY instrument_id";
                 try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlEnriched)) {
                     while (rs.next()) {
-                        String iid = rs.getString("instrument_id");
-                        String ot  = rs.getString("option_type");
-                        int    mb  = rs.getInt("moneyness_bucket");
-                        int    tb  = rs.getInt("time_bucket_15m");
-                        if (ot != null) cohortKeys.put(iid, new int[]{ "CE".equals(ot) ? 0 : 1, mb, tb });
+                        String iid   = rs.getString("instrument_id");
+                        String ot    = rs.getString("option_type");
+                        double mpct  = rs.getDouble("moneyness_pct");
+                        int    tb    = rs.getInt("time_bucket_15m");
+                        double spot  = rs.getDouble("underlying_price");
+                        if (ot != null && spot > 0) {
+                            otMap.put(iid, ot);
+                            liveCtx.put(iid, new double[]{ mpct, tb, spot });
+                        }
                     }
                 }
             } catch (java.sql.SQLException ex) {
                 if (ex.getMessage() != null && ex.getMessage().contains("does not exist")) {
-                    return result; // no enriched data yet
+                    return result; // options_live_enriched not yet created
                 }
                 throw ex;
             }
 
-            // Step 2: for each instrument, query avg_option_price from options_context_buckets
-            // using underlying + option_type + moneyness_bucket + time_bucket_15m.
-            for (var entry : cohortKeys.entrySet()) {
-                String iid  = entry.getKey();
-                int[]  ck   = entry.getValue();
-                String ot   = ck[0] == 0 ? "CE" : "PE";
-                int    mb   = ck[1];
-                int    tb   = ck[2];
+            // Step 2: for each instrument query options_enriched for the historical avg
+            // price/spot ratio at similar moneyness% (±1%) and DTE bucket (±96 = ±1 day).
+            // Multiply ratio by current spot to get a level-adjusted historical price.
+            for (var entry : liveCtx.entrySet()) {
+                String   iid    = entry.getKey();
+                double[] ctx    = entry.getValue();
+                String   ot     = otMap.get(iid);
+                double   mpct   = ctx[0];
+                int      tb     = (int) ctx[1];
+                double   spot   = ctx[2];
 
-                try {
-                    String sqlBucket =
-                            "SELECT avg_option_price FROM options_context_buckets " +
-                            "WHERE underlying = '" + underlying.replace("'","''") + "' " +
-                            "  AND option_type = '" + ot + "' " +
-                            "  AND moneyness_bucket = " + mb + " " +
-                            "  AND time_bucket_15m = " + tb + " " +
-                            "LIMIT 1";
-                    try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlBucket)) {
-                        if (rs.next()) {
-                            double avg = rs.getDouble("avg_option_price");
-                            if (!rs.wasNull() && avg > 0) result.put(iid, avg);
+                double mpctLo = mpct - 1.0;
+                double mpctHi = mpct + 1.0;
+                int    tbLo   = Math.max(0, tb - 96);
+                int    tbHi   = tb + 96;
+
+                // Query options_enriched for avg(last_price) and avg(underlying_price)
+                // separately (QuestDB supports standard AVG aggregate on DOUBLE columns).
+                String sqlHist =
+                        "SELECT avg(last_price) avg_price, avg(underlying_price) avg_spot " +
+                        "FROM options_enriched " +
+                        "WHERE underlying = '" + underlying.replace("'","''") + "' " +
+                        "  AND option_type = '" + ot + "' " +
+                        "  AND moneyness_pct >= " + String.format(java.util.Locale.ROOT, "%.4f", mpctLo) + " " +
+                        "  AND moneyness_pct <= " + String.format(java.util.Locale.ROOT, "%.4f", mpctHi) + " " +
+                        "  AND time_bucket_15m >= " + tbLo + " " +
+                        "  AND time_bucket_15m <= " + tbHi;
+                try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlHist)) {
+                    if (rs.next()) {
+                        double avgPrice = rs.getDouble("avg_price");
+                        double avgSpot  = rs.getDouble("avg_spot");
+                        if (!rs.wasNull() && avgPrice > 0 && avgSpot > 0) {
+                            // Normalize historical price to current market level via ratio
+                            double ratio = avgPrice / avgSpot;
+                            result.put(iid, ratio * spot);
                         }
                     }
                 } catch (java.sql.SQLException ex) {
@@ -1511,7 +1804,7 @@ public final class ResearchConsoleServer {
 
         private static String buildResponse(
                 ScopeStore.StoredScope stored, ResolvedUniverse universe,
-                java.util.List<LegSignal> legs, double strategyNetDelta, Instant now
+                java.util.List<LegSignal> legs, Double strategyNetDelta, Instant now
         ) {
             Scope s = stored.scope();
             StringBuilder sb = new StringBuilder();
@@ -1520,8 +1813,10 @@ public final class ResearchConsoleServer {
               .append("\"underlying\":\"").append(escapeJson(s.underlying())).append("\",")
               .append("\"expiry\":\"").append(s.expiry()).append("\",")
               .append("\"strategy\":\"").append(s.strategy().name()).append("\",")
-              .append("\"instrumentCount\":").append(universe.instruments().size()).append(",")
-              .append("\"strategyNetDelta\":").append(String.format(java.util.Locale.ROOT, "%.4f", strategyNetDelta)).append(",")
+                  .append("\"instrumentCount\":").append(universe.instruments().size()).append(",")
+                  .append("\"strategyNetDelta\":").append(strategyNetDelta == null
+                      ? "null"
+                      : String.format(java.util.Locale.ROOT, "%.4f", strategyNetDelta)).append(",")
               .append("\"snapshotTs\":\"").append(now.toString()).append("\",")
               .append("\"legs\":[");
 
@@ -1566,10 +1861,6 @@ public final class ResearchConsoleServer {
                 appendNullableDouble(sb, "deltaAdjTheta", l.deltaAdjTheta(), 2);
                 sb.append(",");
                 sb.append("\"thetaPattern\":\"").append(l.thetaPattern()).append("\",");
-
-                // strategy net delta (repeated per leg for client convenience)
-                sb.append(String.format(java.util.Locale.ROOT,
-                        "\"strategyNetDelta\":%.4f,", strategyNetDelta));
 
                 // action status
                 sb.append("\"actionStatus\":\"").append(l.actionStatus()).append("\",");
@@ -1626,6 +1917,52 @@ public final class ResearchConsoleServer {
         private static boolean requiresSpot(com.strategysquad.scope.StrikeWindow window) {
             return window instanceof com.strategysquad.scope.StrikeWindow.AtmPct
                     || window instanceof com.strategysquad.scope.StrikeWindow.AtmPoints;
+        }
+
+        /**
+         * Fallback: load all option instruments for the scope's underlying+expiry
+         * directly from {@code instrument_master} when live spot is unavailable.
+         * Live premium fields will be null; historical averages still populate.
+         */
+        private java.util.List<InstrumentRef> loadInstrumentsFromMaster(Scope scope)
+                throws java.sql.SQLException {
+            String sql = "SELECT instrument_id, exchange_token, trading_symbol, option_type, "
+                    + "strike, expiry_date, lot_size, expiry_type "
+                    + "FROM instrument_master "
+                    + "WHERE underlying = ? AND expiry_date = ? "
+                    + "ORDER BY strike, option_type";
+            java.util.List<InstrumentRef> result = new java.util.ArrayList<>();
+            try (java.sql.Connection conn = com.strategysquad.platform.db.QuestDbConnectionFactory.open(jdbcUrl);
+                 java.sql.PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, scope.underlying());
+                ps.setString(2, scope.expiry().toString());
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        try {
+                            String instrId = rs.getString("instrument_id");
+                            long token = rs.getLong("exchange_token");
+                            String tradSym = rs.getString("trading_symbol");
+                            String optType = rs.getString("option_type");
+                            java.math.BigDecimal strike = rs.getBigDecimal("strike");
+                            java.time.LocalDate expiryDate = java.time.LocalDate.parse(rs.getString("expiry_date"));
+                            int lotSize = rs.getInt("lot_size");
+                            String etStr = rs.getString("expiry_type");
+                            com.strategysquad.market.instrument.ExpiryType et;
+                            try {
+                                et = com.strategysquad.market.instrument.ExpiryType.valueOf(
+                                        etStr != null ? etStr.toUpperCase() : "");
+                            } catch (IllegalArgumentException ex) {
+                                et = scope.expiryType();
+                            }
+                            result.add(new InstrumentRef(instrId, token, tradSym, optType,
+                                    strike, expiryDate, et, lotSize));
+                        } catch (Exception ignored) {
+                            // Skip malformed rows
+                        }
+                    }
+                }
+            }
+            return result;
         }
     }
 
@@ -1743,11 +2080,267 @@ public final class ResearchConsoleServer {
         }
     }
 
+    private static void restoreOpenSessionQuoteKeys(
+            ResearchPositionSessionService sessionService,
+            KiteSubscriptionManager subscriptionManager
+    ) {
+        try {
+            for (PositionSessionSnapshot session : sessionService.loadAll()) {
+                ensureSessionQuoteKeys(session, subscriptionManager);
+            }
+        } catch (IOException exception) {
+            System.err.println("[position-sessions] Unable to restore session quote keys: " + exception.getMessage());
+        }
+    }
+
+    private static void ensureSessionQuoteKeys(
+            PositionSessionSnapshot snapshot,
+            KiteSubscriptionManager subscriptionManager
+    ) {
+        if (snapshot == null || subscriptionManager == null || snapshot.legs() == null) {
+            return;
+        }
+        Map<String, String> extraKeyToId = new HashMap<>();
+        for (PositionSessionSnapshot.PositionLegSnapshot leg : snapshot.legs()) {
+            if (!shouldRestoreSessionLegQuoteKey(leg)) {
+                continue;
+            }
+            if (leg.symbol() == null || leg.symbol().isBlank()
+                    || leg.instrumentId() == null || leg.instrumentId().isBlank()) {
+                continue;
+            }
+            extraKeyToId.put("NFO:" + leg.symbol().trim(), leg.instrumentId().trim());
+        }
+        if (!extraKeyToId.isEmpty()) {
+            subscriptionManager.addExtraQuoteKeys(extraKeyToId);
+        }
+    }
+
+    static boolean shouldRestoreSessionLegQuoteKey(PositionSessionSnapshot.PositionLegSnapshot leg) {
+        return leg != null && leg.openQuantity() > 0;
+    }
+
+    static boolean shouldPreserveExistingSessionOnPost(
+            PositionSessionSnapshot existing,
+            PositionSessionSnapshot incoming
+    ) {
+        // Phase 2 (2.2): UI must NEVER overwrite an active/reduced session.
+        // Any incoming POST is rejected as long as the existing session is active
+        // with open lots, regardless of the incoming snapshot's lot counts.
+        // Session creation must come from an explicit user action (Strategy Lab
+        // or the manual "Re-link" button) against a fresh sessionId.
+        if (incoming == null) {
+            return false;
+        }
+        return isActivePositionSession(existing);
+    }
+
+    private static boolean isActivePositionSession(PositionSessionSnapshot snapshot) {
+        return snapshot != null
+                && ("OPEN".equalsIgnoreCase(snapshot.status())
+                || "PARTIALLY_EXITED".equalsIgnoreCase(snapshot.status())
+                || "REDUCED".equalsIgnoreCase(snapshot.status()))
+                && totalOpenLots(snapshot) > 0;
+    }
+
+    private static int totalOpenLots(PositionSessionSnapshot snapshot) {
+        if (snapshot == null || snapshot.legs() == null) {
+            return 0;
+        }
+        return snapshot.legs().stream()
+                .filter(Objects::nonNull)
+                .mapToInt(leg -> Math.max(0, leg.openQuantity()))
+                .sum();
+    }
+
+    /**
+     * POST /api/position-sessions/relink
+     *
+     * <p>Server-side re-link: given a {@code strategyId}, looks up executions from the
+     * order ledger, builds a fresh {@link PositionSessionSnapshot}, and saves it.
+     *
+     * <p><b>Guard:</b> returns 409 CONFLICT if any OPEN or PARTIALLY_EXITED session with
+     * open lots already exists for today's trading day, preventing accidental duplication.
+     *
+     * <p>Request body: {@code { "strategyId": "...", "source": "dummy" }}
+     * The {@code source} field is optional — {@code "dummy"} forces dummy-mode execution
+     * lookup when the live order service is not connected.
+     */
+    private static final class PositionSessionRelinkHandler implements HttpHandler {
+        private final ResearchPositionSessionService sessionService;
+        private final OptionOrderService orderService;
+        private final KiteSubscriptionManager subscriptionManager;
+
+        private PositionSessionRelinkHandler(
+                ResearchPositionSessionService sessionService,
+                OptionOrderService orderService,
+                KiteSubscriptionManager subscriptionManager
+        ) {
+            this.sessionService = sessionService;
+            this.orderService = orderService;
+            this.subscriptionManager = subscriptionManager;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            if (orderService == null) {
+                sendJson(exchange, 503, "{\"error\":\"Order service not available\"}");
+                return;
+            }
+            try {
+                // Parse minimal request body.
+                Map<String, String> body = parseSimpleJsonBody(readRequestBody(exchange));
+                String strategyId = body.get("strategyId");
+                boolean dummyMode = isDummySource(body.get("source"));
+                if (strategyId == null || strategyId.isBlank()) {
+                    sendJson(exchange, 400, "{\"error\":\"strategyId is required\"}");
+                    return;
+                }
+
+                // Guard: refuse if any active session already exists today.
+                LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+                List<PositionSessionSnapshot> todaySessions =
+                        sessionService.loadForTradingDay(today, ZoneId.of("Asia/Kolkata"));
+                PositionSessionSnapshot active = todaySessions.stream()
+                        .filter(ResearchConsoleServer::isActivePositionSession)
+                        .findFirst().orElse(null);
+                if (active != null) {
+                    sendJson(exchange, 409,
+                            "{\"error\":\"Active session already exists\",\"sessionId\":\""
+                                    + escapeJson(active.sessionId()) + "\"}");
+                    return;
+                }
+
+                // Look up the strategy from the execution ledger.
+                List<OptionOrderService.StrategyView> strategies = orderService.loadStrategies(dummyMode);
+                OptionOrderService.StrategyView strategy = strategies.stream()
+                        .filter(s -> strategyId.equals(s.strategyId()))
+                        .findFirst().orElse(null);
+                if (strategy == null || strategy.legs() == null || strategy.legs().isEmpty()) {
+                    sendJson(exchange, 404, "{\"error\":\"Strategy not found or has no legs\",\"strategyId\":\""
+                            + escapeJson(strategyId) + "\"}");
+                    return;
+                }
+
+                // Build the session from execution data — no UI-side reconstruction.
+                Instant now = Instant.now();
+                String expiryStr = strategy.expiry() != null ? strategy.expiry().toString() : "";
+                List<PositionSessionSnapshot.PositionLegSnapshot> legs = new ArrayList<>();
+                for (int i = 0; i < strategy.legs().size(); i++) {
+                    OptionOrderService.StrategyLegView leg = strategy.legs().get(i);
+                    boolean isSell = "SELL".equalsIgnoreCase(leg.transactionType());
+                    String side = isSell ? "SHORT" : "LONG";
+                    String legRole = isSell
+                            ? PositionSessionSnapshot.LegRole.SHORT_PREMIUM.name()
+                            : PositionSessionSnapshot.LegRole.LONG_HEDGE.name();
+                    String legId = leg.instrumentId() != null
+                            ? leg.instrumentId() + "-" + side
+                            : "leg-" + i;
+                    String label = (isSell ? "Short " : "Long ")
+                            + (leg.optionType() != null ? leg.optionType() : "")
+                            + " "
+                            + (leg.strike() != null ? leg.strike().toPlainString() : "?");
+                    String legStatus = leg.lots() <= 0 ? "CLOSED" : "OPEN";
+                    legs.add(new PositionSessionSnapshot.PositionLegSnapshot(
+                            legId, label,
+                            leg.optionType() != null ? leg.optionType() : "",
+                            side,
+                            leg.strike(),
+                            expiryStr,
+                            leg.tradingSymbol() != null ? leg.tradingSymbol() : "",
+                            leg.instrumentId() != null ? leg.instrumentId() : "",
+                            leg.entryPrice() != null ? leg.entryPrice() : BigDecimal.ZERO,
+                            leg.lots(),
+                            leg.lots(),
+                            leg.bookedPnl() != null ? leg.bookedPnl() : BigDecimal.ZERO,
+                            legStatus,
+                            strategy.openedAt() != null ? strategy.openedAt() : now,
+                            now,
+                            leg.executionId(),
+                            legRole
+                    ));
+                }
+
+                Instant openedAt = strategy.openedAt() != null ? strategy.openedAt() : now;
+                PositionSessionSnapshot session = PositionSessionSnapshot.withNoAdjustmentState(
+                        strategyId,
+                        "paper",
+                        strategy.strategyLabel() != null ? strategy.strategyLabel() : strategy.strategyType(),
+                        "NEUTRAL",
+                        strategy.underlying() != null ? strategy.underlying() : "NIFTY",
+                        "",
+                        "INTRADAY",
+                        0,
+                        null,
+                        strategy.totalLots(),
+                        openedAt,
+                        now,
+                        null,
+                        "OPEN",
+                        legs,
+                        List.of()
+                );
+                sessionService.save(session);
+                ensureSessionQuoteKeys(session, subscriptionManager);
+                sendJson(exchange, 200, sessionService.toJson(session));
+
+            } catch (SQLException | InterruptedException ex) {
+                sendJson(exchange, 503, "{\"error\":\"Order service unavailable\",\"details\":\""
+                        + escapeJson(ex.getMessage()) + "\"}");
+            } catch (IOException ex) {
+                sendJson(exchange, 500, "{\"error\":\"Session save failed\",\"details\":\""
+                        + escapeJson(ex.getMessage()) + "\"}");
+            }
+        }
+
+        /** Parses a flat JSON object into a String→String map (values as raw strings). */
+        private static Map<String, String> parseSimpleJsonBody(String body) {
+            Map<String, String> result = new java.util.HashMap<>();
+            if (body == null || body.isBlank()) return result;
+            // Strip outer braces, split by comma, extract "key": "value" or "key": value pairs.
+            String inner = body.trim();
+            if (inner.startsWith("{")) inner = inner.substring(1);
+            if (inner.endsWith("}")) inner = inner.substring(0, inner.length() - 1);
+            for (String entry : inner.split(",")) {
+                int colon = entry.indexOf(':');
+                if (colon < 0) continue;
+                String k = entry.substring(0, colon).trim().replaceAll("^\"|\"$", "");
+                String v = entry.substring(colon + 1).trim().replaceAll("^\"|\"$", "");
+                result.put(k, v);
+            }
+            return result;
+        }
+    }
+
     private static final class PositionSessionsHandler implements HttpHandler {
         private final ResearchPositionSessionService service;
+        private final KiteSubscriptionManager subscriptionManager;
+        private final OptionOrderService orderService;
 
-        private PositionSessionsHandler(ResearchPositionSessionService service) {
+        private PositionSessionsHandler(
+                ResearchPositionSessionService service,
+                KiteSubscriptionManager subscriptionManager
+        ) {
+            this(service, subscriptionManager, null);
+        }
+
+        private PositionSessionsHandler(
+                ResearchPositionSessionService service,
+                KiteSubscriptionManager subscriptionManager,
+                OptionOrderService orderService
+        ) {
             this.service = service;
+            this.subscriptionManager = subscriptionManager;
+            this.orderService = orderService;
         }
 
         @Override
@@ -1762,6 +2355,10 @@ public final class ResearchConsoleServer {
                     LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
                     java.util.List<PositionSessionSnapshot> sessions =
                             service.loadForTradingDay(today, ZoneId.of("Asia/Kolkata"));
+                    // Backfill missing leg.executionId by matching against today's executions.
+                    // Without this, Monitor REDUCE actions cannot call closeLots() and the
+                    // Orders screen Strategy Tracker will show stale (pre-reduce) lot counts.
+                    sessions = backfillExecutionIds(sessions);
                     StringBuilder sb = new StringBuilder("[");
                     for (int i = 0; i < sessions.size(); i++) {
                         if (i > 0) sb.append(",");
@@ -1781,7 +2378,16 @@ public final class ResearchConsoleServer {
             }
             try {
                 PositionSessionSnapshot snapshot = service.parseSession(readRequestBody(exchange));
+                PositionSessionSnapshot existing = snapshot == null || snapshot.sessionId() == null || snapshot.sessionId().isBlank()
+                        ? null
+                        : service.load(snapshot.sessionId());
+                if (shouldPreserveExistingSessionOnPost(existing, snapshot)) {
+                    ensureSessionQuoteKeys(existing, subscriptionManager);
+                    sendJson(exchange, 200, service.toJson(existing));
+                    return;
+                }
                 service.save(snapshot);
+                ensureSessionQuoteKeys(snapshot, subscriptionManager);
                 sendJson(exchange, 200, service.toJson(snapshot));
             } catch (IllegalArgumentException exception) {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
@@ -1790,18 +2396,152 @@ public final class ResearchConsoleServer {
                         + escapeJson(exception.getMessage()) + "\"}");
             }
         }
+
+        /**
+         * Rescues sessions whose legs have a null {@code executionId} (e.g. created by an
+         * older Strategy Lab build that posted the session before capturing the placeOrder
+         * response). For each such leg, finds today's execution that matches by
+         * {@code instrumentId} + side→transactionType (preferring same {@code strategyId}),
+         * patches the leg, and persists the corrected snapshot back to disk.
+         *
+         * <p>Idempotent — once every leg has an executionId this is a no-op.</p>
+         */
+        private java.util.List<PositionSessionSnapshot> backfillExecutionIds(
+                java.util.List<PositionSessionSnapshot> sessions) {
+            if (orderService == null || sessions == null || sessions.isEmpty()) {
+                return sessions == null ? java.util.List.of() : sessions;
+            }
+            // Cheap upfront check — bail if every leg already has an executionId.
+            boolean anyMissing = sessions.stream()
+                    .flatMap(s -> s.legs().stream())
+                    .anyMatch(l -> l.executionId() == null || l.executionId().isBlank());
+            if (!anyMissing) return sessions;
+
+            java.util.List<OptionOrderService.ExecutionLinkKey> keys;
+            try {
+                keys = orderService.loadTodayExecutionLinkKeys();
+            } catch (IOException e) {
+                // If we can't load executions, return sessions unchanged — never block GET.
+                return sessions;
+            }
+            if (keys == null || keys.isEmpty()) return sessions;
+
+            java.util.List<PositionSessionSnapshot> patched = new java.util.ArrayList<>(sessions.size());
+            for (PositionSessionSnapshot session : sessions) {
+                PositionSessionSnapshot updated = backfillSession(session, keys);
+                if (updated != session) {
+                    try {
+                        service.save(updated);
+                    } catch (IOException e) {
+                        // Persist failure is non-fatal — return the in-memory patched view anyway.
+                    }
+                    patched.add(updated);
+                } else {
+                    patched.add(session);
+                }
+            }
+            return patched;
+        }
+
+        private static PositionSessionSnapshot backfillSession(
+                PositionSessionSnapshot session,
+                java.util.List<OptionOrderService.ExecutionLinkKey> keys) {
+            boolean changed = false;
+            java.util.List<PositionSessionSnapshot.PositionLegSnapshot> updatedLegs =
+                    new java.util.ArrayList<>(session.legs().size());
+            for (PositionSessionSnapshot.PositionLegSnapshot leg : session.legs()) {
+                if (leg.executionId() != null && !leg.executionId().isBlank()) {
+                    updatedLegs.add(leg);
+                    continue;
+                }
+                String wantTxn = "SHORT".equalsIgnoreCase(leg.side()) ? "SELL" : "BUY";
+                String wantInstrumentId = leg.instrumentId();
+                if (wantInstrumentId == null || wantInstrumentId.isBlank()) {
+                    updatedLegs.add(leg);
+                    continue;
+                }
+                // Prefer match by (instrumentId + transactionType + strategyId); fall back to
+                // (instrumentId + transactionType). Pick the most recently created execution.
+                OptionOrderService.ExecutionLinkKey best = null;
+                for (OptionOrderService.ExecutionLinkKey k : keys) {
+                    if (!wantInstrumentId.equals(k.instrumentId())) continue;
+                    if (!wantTxn.equalsIgnoreCase(k.transactionType())) continue;
+                    if (session.sessionId() != null && k.strategyId() != null
+                            && !session.sessionId().equals(k.strategyId())) {
+                        // Strategy mismatch — keep as a fallback only.
+                        if (best == null) best = k;
+                        continue;
+                    }
+                    if (best == null
+                            || (k.createdAt() != null && best.createdAt() != null
+                                && k.createdAt().isAfter(best.createdAt()))) {
+                        best = k;
+                    }
+                }
+                if (best == null) {
+                    updatedLegs.add(leg);
+                    continue;
+                }
+                changed = true;
+                updatedLegs.add(new PositionSessionSnapshot.PositionLegSnapshot(
+                        leg.legId(),
+                        leg.label(),
+                        leg.optionType(),
+                        leg.side(),
+                        leg.strike(),
+                        leg.expiryDate(),
+                        leg.symbol(),
+                        leg.instrumentId(),
+                        leg.entryPrice(),
+                        leg.originalQuantity(),
+                        leg.openQuantity(),
+                        leg.bookedPnl(),
+                        leg.status(),
+                        leg.createdAt(),
+                        leg.updatedAt(),
+                        best.executionId(),
+                        leg.legRole()
+                ));
+            }
+            if (!changed) return session;
+            return new PositionSessionSnapshot(
+                    session.sessionId(),
+                    session.mode(),
+                    session.strategyLabel(),
+                    session.orientation(),
+                    session.underlying(),
+                    session.expiryType(),
+                    session.timeframe(),
+                    session.dte(),
+                    session.spot(),
+                    session.scenarioQty(),
+                    session.createdAt(),
+                    session.updatedAt(),
+                    session.lastDeltaAdjustmentTs(),
+                    session.status(),
+                    updatedLegs,
+                    session.auditLog(),
+                    session.lastAdjustmentTs(),
+                    session.lastAdjustmentPnlPerLot(),
+                    session.hedgePremiumPaidCe(),
+                    session.hedgePremiumPaidPe()
+            );
+        }
     }
 
     private static final class PositionSessionItemHandler implements HttpHandler {
         private final ResearchPositionSessionService service;
         private final PositionSessionActionService actionService;
+        private final KiteSubscriptionManager subscriptionManager;
 
         private PositionSessionItemHandler(
                 ResearchPositionSessionService service,
-                PositionSessionActionService actionService
+                PositionSessionActionService actionService,
+                KiteSubscriptionManager subscriptionManager
         ) {
             this.service = service;
             this.actionService = actionService;
+            this.subscriptionManager = subscriptionManager;
         }
 
         @Override
@@ -1838,6 +2578,7 @@ public final class ResearchConsoleServer {
                     PositionSessionActionRequest request = service.parseAction(readRequestBody(exchange));
                     PositionSessionSnapshot updated = actionService.apply(existing, request);
                     service.save(updated);
+                    ensureSessionQuoteKeys(updated, subscriptionManager);
                     sendJson(exchange, 200, service.toJson(updated));
                     return;
                 }
@@ -1900,9 +2641,15 @@ public final class ResearchConsoleServer {
 
     private static final class OrderMetadataHandler implements HttpHandler {
         private final OptionOrderService service;
+        private final boolean defaultDummyMode;
 
         private OrderMetadataHandler(OptionOrderService service) {
+            this(service, false);
+        }
+
+        private OrderMetadataHandler(OptionOrderService service, boolean defaultDummyMode) {
             this.service = service;
+            this.defaultDummyMode = defaultDummyMode;
         }
 
         @Override
@@ -1923,7 +2670,8 @@ public final class ResearchConsoleServer {
                     sendJson(exchange, 400, "{\"error\":\"underlying parameter is required\"}");
                     return;
                 }
-                sendJson(exchange, 200, service.toJson(service.loadMetadata(underlying)));
+                boolean dummyMode = defaultDummyMode || isDummySource(query.get("source"));
+                sendJson(exchange, 200, service.toJson(service.loadMetadata(underlying, dummyMode)));
             } catch (IllegalArgumentException exception) {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             } catch (SQLException exception) {
@@ -1938,9 +2686,15 @@ public final class ResearchConsoleServer {
 
     private static final class OrderQuoteHandler implements HttpHandler {
         private final OptionOrderService service;
+        private final boolean defaultDummyMode;
 
         private OrderQuoteHandler(OptionOrderService service) {
+            this(service, false);
+        }
+
+        private OrderQuoteHandler(OptionOrderService service, boolean defaultDummyMode) {
             this.service = service;
+            this.defaultDummyMode = defaultDummyMode;
         }
 
         @Override
@@ -1956,11 +2710,13 @@ public final class ResearchConsoleServer {
             }
             try {
                 Map<String, String> query = parseQuery(exchange.getRequestURI());
+                boolean dummyMode = defaultDummyMode || isDummySource(query.get("source"));
                 sendJson(exchange, 200, service.toJson(service.loadQuote(
                         query.get("underlying"),
                         query.get("expiry"),
                         query.get("strike"),
-                        query.get("optionType")
+                        query.get("optionType"),
+                        dummyMode
                 )));
             } catch (IllegalArgumentException exception) {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
@@ -1972,6 +2728,71 @@ public final class ResearchConsoleServer {
                         + escapeJson(exception.getMessage()) + "\"}");
             }
         }
+    }
+
+    /**
+     * Wrapper around {@link com.strategysquad.api.filter.MarketHoursGuard} that lets
+     * <strong>paper</strong> orders through outside market hours. Real (Kite) orders
+     * remain gated. Detection is by inspecting the JSON body for {@code "mode":"paper"}
+     * — body is buffered and re-presented to the delegate so the downstream handler can
+     * still read it normally.
+     */
+    private static final class PaperAwareGuard implements HttpHandler {
+        private final HttpHandler delegate;
+        private final HttpHandler guarded;
+
+        private PaperAwareGuard(HttpHandler delegate) {
+            this.delegate = delegate;
+            this.guarded  = new com.strategysquad.api.filter.MarketHoursGuard(delegate);
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                guarded.handle(exchange);
+                return;
+            }
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            String s = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+            boolean isPaper = s.contains("\"mode\":\"paper\"")
+                    || s.contains("\"mode\": \"paper\"")
+                    || s.contains("\"mode\" : \"paper\"");
+            HttpExchange wrapped = new BufferedBodyExchange(exchange, body);
+            if (isPaper) {
+                delegate.handle(wrapped);
+            } else {
+                guarded.handle(wrapped);
+            }
+        }
+    }
+
+    /** Delegating HttpExchange that re-serves a previously-read body. */
+    private static final class BufferedBodyExchange extends com.sun.net.httpserver.HttpExchange {
+        private final HttpExchange inner;
+        private final java.io.ByteArrayInputStream buffered;
+
+        BufferedBodyExchange(HttpExchange inner, byte[] body) {
+            this.inner = inner;
+            this.buffered = new java.io.ByteArrayInputStream(body);
+        }
+
+        @Override public com.sun.net.httpserver.Headers getRequestHeaders() { return inner.getRequestHeaders(); }
+        @Override public com.sun.net.httpserver.Headers getResponseHeaders() { return inner.getResponseHeaders(); }
+        @Override public java.net.URI getRequestURI() { return inner.getRequestURI(); }
+        @Override public String getRequestMethod() { return inner.getRequestMethod(); }
+        @Override public com.sun.net.httpserver.HttpContext getHttpContext() { return inner.getHttpContext(); }
+        @Override public void close() { inner.close(); }
+        @Override public java.io.InputStream getRequestBody() { return buffered; }
+        @Override public java.io.OutputStream getResponseBody() { return inner.getResponseBody(); }
+        @Override public void sendResponseHeaders(int rCode, long responseLength) throws IOException { inner.sendResponseHeaders(rCode, responseLength); }
+        @Override public java.net.InetSocketAddress getRemoteAddress() { return inner.getRemoteAddress(); }
+        @Override public int getResponseCode() { return inner.getResponseCode(); }
+        @Override public java.net.InetSocketAddress getLocalAddress() { return inner.getLocalAddress(); }
+        @Override public String getProtocol() { return inner.getProtocol(); }
+        @Override public Object getAttribute(String name) { return inner.getAttribute(name); }
+        @Override public void setAttribute(String name, Object value) { inner.setAttribute(name, value); }
+        @Override public void setStreams(java.io.InputStream i, java.io.OutputStream o) { inner.setStreams(i, o); }
+        @Override public com.sun.net.httpserver.HttpPrincipal getPrincipal() { return inner.getPrincipal(); }
     }
 
     private static final class OrderPlaceHandler implements HttpHandler {
@@ -2013,8 +2834,292 @@ public final class ResearchConsoleServer {
 
     private static final class OrderExecutionsHandler implements HttpHandler {
         private final OptionOrderService service;
+        private final ResearchPositionSessionService sessionService;
+        private final boolean defaultDummyMode;
 
-        private OrderExecutionsHandler(OptionOrderService service) {
+        private OrderExecutionsHandler(OptionOrderService service,
+                                       ResearchPositionSessionService sessionService,
+                                       boolean defaultDummyMode) {
+            this.service = service;
+            this.sessionService = sessionService;
+            this.defaultDummyMode = defaultDummyMode;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String prefix = "/api/orders/executions/";
+            boolean hasId = path.startsWith(prefix) && path.length() > prefix.length();
+
+            if ("PATCH".equalsIgnoreCase(exchange.getRequestMethod())) {
+                if (!hasId) {
+                    sendJson(exchange, 400, "{\"error\":\"Missing execution ID in path\"}");
+                    return;
+                }
+                String executionId;
+                try {
+                    executionId = java.net.URLDecoder.decode(
+                            path.substring(prefix.length()), java.nio.charset.StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    sendJson(exchange, 400, "{\"error\":\"Invalid execution ID encoding\"}");
+                    return;
+                }
+                try {
+                    String body = readRequestBody(exchange);
+                    com.google.gson.JsonObject req = new com.google.gson.Gson()
+                            .fromJson(body, com.google.gson.JsonObject.class);
+                    if (req == null || !req.has("lotsToClose")) {
+                        sendJson(exchange, 400, "{\"error\":\"lotsToClose is required\"}");
+                        return;
+                    }
+                    int lotsToClose = req.get("lotsToClose").getAsInt();
+                    java.math.BigDecimal closePrice = req.has("closePrice") && !req.get("closePrice").isJsonNull()
+                            ? req.get("closePrice").getAsBigDecimal() : null;
+                    OptionOrderService.ExecutionView result = service.closeLots(executionId, lotsToClose, closePrice);
+                    sendJson(exchange, 200, service.toJson(result));
+                } catch (IllegalArgumentException e) {
+                    sendJson(exchange, 400, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
+                } catch (Exception e) {
+                    sendJson(exchange, 500, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
+                }
+                return;
+            }
+
+            if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod())) {
+                // Clear All: delete today's executions, position sessions, and cached quote history.
+                try {
+                    int deletedExec = service.clearTodaysExecutions();
+                    service.clearQuoteSampleHistory();
+                    int deletedSess = 0;
+                    if (sessionService != null) {
+                        deletedSess = sessionService.clearTodaysSessions(java.time.ZoneId.of("Asia/Kolkata"));
+                    }
+                    System.out.println("[INFO] module=orders flow=persistence eventType=CLEAR_ALL"
+                            + " message=\"Cleared today's orders and sessions\""
+                            + " deletedExecutions=" + deletedExec
+                            + " deletedSessions=" + deletedSess);
+                    sendJson(exchange, 200, "{\"status\":\"cleared\",\"deleted\":" + deletedExec
+                            + ",\"deletedSessions\":" + deletedSess + "}");
+                } catch (Exception e) {
+                    System.err.println("[ERROR] module=orders flow=persistence eventType=CLEAR_ALL_FAILED"
+                            + " rootCauseTag=clear-executions-failed message=\"" + e.getMessage() + "\"");
+                    sendJson(exchange, 500, "{\"error\":\"Clear failed\",\"details\":\""
+                            + escapeJson(e.getMessage()) + "\"}");
+                }
+                return;
+            }
+
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                boolean dummyMode = defaultDummyMode || isDummySource(query.get("source"));
+                sendJson(exchange, 200, service.toJson(service.loadExecutions(dummyMode)));
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to load executions\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            } catch (Exception exception) {
+                sendJson(exchange, 503, "{\"error\":\"Execution feed unavailable\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    /**
+     * GET /api/orders/strategies
+     *
+     * <p>Returns all open positions grouped into strategy views, each with aggregated
+     * net delta, net theta benefit, live P&L, risk state, and per-leg detail.
+     * Used by the Monitor page for continuous position monitoring.
+     */
+    private static final class OrderStrategiesHandler implements HttpHandler {
+        private final OptionOrderService service;
+        private final boolean defaultDummyMode;
+
+        private OrderStrategiesHandler(OptionOrderService service) {
+            this(service, false);
+        }
+
+        private OrderStrategiesHandler(OptionOrderService service, boolean defaultDummyMode) {
+            this.service = service;
+            this.defaultDummyMode = defaultDummyMode;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                boolean dummyMode = defaultDummyMode || isDummySource(query.get("source"));
+                sendJson(exchange, 200, service.toJson(service.loadStrategies(dummyMode)));
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to load strategies\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            } catch (Exception exception) {
+                sendJson(exchange, 503, "{\"error\":\"Strategy feed unavailable\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    /**
+     * GET /api/orders/positions — aggregated open-position view.
+     *
+     * <p>Groups today's executions by {@code (instrumentId, transactionType)} into a single
+     * row each. This is the data behind the Position Tracking table on the Orders desk.
+     * Closed positions remain visible until end-of-day per Orders desk product spec.
+     */
+    private static final class OrderPositionsHandler implements HttpHandler {
+        private final OptionOrderService service;
+        private final boolean defaultDummyMode;
+
+        private OrderPositionsHandler(OptionOrderService service, boolean defaultDummyMode) {
+            this.service = service;
+            this.defaultDummyMode = defaultDummyMode;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            try {
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                boolean dummyMode = defaultDummyMode || isDummySource(query.get("source"));
+                java.util.List<OptionOrderService.ExecutionView> all = service.loadExecutions(dummyMode);
+
+                java.util.Map<String, java.util.List<OptionOrderService.ExecutionView>> groups = new java.util.LinkedHashMap<>();
+                for (OptionOrderService.ExecutionView ev : all) {
+                    String key = ev.instrumentId() + "|" + ev.transactionType();
+                    groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(ev);
+                }
+
+                java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>(groups.size());
+                for (java.util.Map.Entry<String, java.util.List<OptionOrderService.ExecutionView>> entry : groups.entrySet()) {
+                    java.util.List<OptionOrderService.ExecutionView> legs = entry.getValue();
+                    int origLots = 0;
+                    int currentLots = 0;
+                    java.math.BigDecimal entryNumer = java.math.BigDecimal.ZERO;
+                    int entryDenom = 0;
+                    java.math.BigDecimal bookedPnl = java.math.BigDecimal.ZERO;
+                    java.math.BigDecimal livePnl = java.math.BigDecimal.ZERO;
+                    java.time.Instant firstTs = null;
+                    java.time.Instant lastTs = null;
+                    OptionOrderService.ExecutionView newest = legs.get(0);
+                    for (OptionOrderService.ExecutionView ev : legs) {
+                        // Original lot count = max of current open lots and the entry-time fill;
+                        // closeLots() decrements `lots` but `filledQuantity` only drops by what
+                        // was reduced, so the larger of the two is a stable upper bound.
+                        int legOrig = ev.lotSize() > 0
+                                ? Math.max(ev.lots(), ev.filledQuantity() / Math.max(ev.lotSize(), 1))
+                                : ev.lots();
+                        origLots += legOrig;
+                        currentLots += ev.lots();
+                        if (ev.entryPrice() != null && ev.quantity() > 0) {
+                            entryNumer = entryNumer.add(ev.entryPrice().multiply(java.math.BigDecimal.valueOf(ev.quantity())));
+                            entryDenom += ev.quantity();
+                        }
+                        if (ev.bookedPnl() != null) bookedPnl = bookedPnl.add(ev.bookedPnl());
+                        if (ev.unbookedPnl() != null) livePnl = livePnl.add(ev.unbookedPnl());
+                        if (ev.createdAt() != null && (firstTs == null || ev.createdAt().isBefore(firstTs))) firstTs = ev.createdAt();
+                        if (ev.updatedAt() != null && (lastTs == null || ev.updatedAt().isAfter(lastTs))) {
+                            lastTs = ev.updatedAt();
+                            newest = ev;
+                        }
+                    }
+                    java.math.BigDecimal avgEntry = entryDenom > 0
+                            ? entryNumer.divide(java.math.BigDecimal.valueOf(entryDenom), 4, java.math.RoundingMode.HALF_UP)
+                            : null;
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("positionId", entry.getKey());
+                    row.put("primaryExecutionId", newest.executionId());
+                    row.put("underlying", newest.underlying());
+                    row.put("instrumentId", newest.instrumentId());
+                    row.put("tradingSymbol", newest.tradingSymbol());
+                    row.put("optionType", newest.optionType());
+                    row.put("strike", newest.strike());
+                    row.put("expiry", newest.expiry());
+                    row.put("transactionType", newest.transactionType());
+                    row.put("side", "SELL".equalsIgnoreCase(newest.transactionType()) ? "SHORT" : "LONG");
+                    row.put("lotSize", newest.lotSize());
+                    row.put("originalLots", origLots);
+                    row.put("currentLots", currentLots);
+                    row.put("avgEntryPrice", avgEntry);
+                    row.put("currentPrice", newest.currentPrice());
+                    row.put("bookedPnl", bookedPnl);
+                    row.put("livePnl", livePnl);
+                    row.put("status", currentLots > 0 ? "OPEN" : "CLOSED");
+                    row.put("firstFillAt", firstTs);
+                    row.put("lastUpdatedAt", lastTs);
+                    row.put("strategyId", newest.strategyId());
+                    row.put("strategyLabel", newest.strategyLabel());
+                    java.util.List<java.util.Map<String, Object>> legPayload = new java.util.ArrayList<>(legs.size());
+                    for (OptionOrderService.ExecutionView ev : legs) {
+                        java.util.Map<String, Object> l = new java.util.LinkedHashMap<>();
+                        l.put("executionId", ev.executionId());
+                        l.put("lots", ev.lots());
+                        l.put("entryPrice", ev.entryPrice());
+                        l.put("createdAt", ev.createdAt());
+                        legPayload.add(l);
+                    }
+                    row.put("legs", legPayload);
+                    rows.add(row);
+                }
+                rows.sort((a, b) -> {
+                    int sa = "OPEN".equals(a.get("status")) ? 0 : 1;
+                    int sb = "OPEN".equals(b.get("status")) ? 0 : 1;
+                    if (sa != sb) return Integer.compare(sa, sb);
+                    java.time.Instant ta = (java.time.Instant) a.get("lastUpdatedAt");
+                    java.time.Instant tb = (java.time.Instant) b.get("lastUpdatedAt");
+                    if (ta == null && tb == null) return 0;
+                    if (ta == null) return 1;
+                    if (tb == null) return -1;
+                    return tb.compareTo(ta);
+                });
+
+                sendJson(exchange, 200, service.toJson(rows));
+            } catch (SQLException exception) {
+                sendJson(exchange, 500, "{\"error\":\"Unable to load positions\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            } catch (Exception exception) {
+                sendJson(exchange, 503, "{\"error\":\"Position feed unavailable\",\"details\":\""
+                        + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    /**
+     * GET /api/orders/log — append-only audit ledger of order actions for today.
+     *
+     * <p>Returns every PLACE / REDUCE / CLOSE event recorded by {@link OrderEventStore}.
+     * For executions placed BEFORE the event-store was wired in, this handler synthesizes
+     * a backfilled PLACE event so the log is never empty when positions exist.
+     */
+    private static final class OrderLogHandler implements HttpHandler {
+        private final OptionOrderService service;
+
+        private OrderLogHandler(OptionOrderService service) {
             this.service = service;
         }
 
@@ -2030,13 +3135,113 @@ public final class ResearchConsoleServer {
                 return;
             }
             try {
-                sendJson(exchange, 200, service.toJson(service.loadExecutions()));
-            } catch (SQLException exception) {
-                sendJson(exchange, 500, "{\"error\":\"Unable to load executions\",\"details\":\""
-                        + escapeJson(exception.getMessage()) + "\"}");
+                java.util.List<OrderEventStore.OrderEvent> events = service.eventStore().loadToday();
+
+                java.util.Set<String> seenPlaceFor = new java.util.HashSet<>();
+                for (OrderEventStore.OrderEvent ev : events) {
+                    if ("PLACE".equals(ev.type()) && ev.executionId() != null) seenPlaceFor.add(ev.executionId());
+                }
+                java.util.List<OptionOrderService.ExecutionView> execs;
+                try {
+                    execs = service.loadExecutions(false);
+                } catch (Exception ignore) {
+                    execs = java.util.List.of();
+                }
+                java.util.List<OrderEventStore.OrderEvent> merged = new java.util.ArrayList<>(events);
+                for (OptionOrderService.ExecutionView ev : execs) {
+                    if (ev.executionId() == null || seenPlaceFor.contains(ev.executionId())) continue;
+                    int lots = ev.lotSize() > 0
+                            ? Math.max(ev.lots(), ev.filledQuantity() / Math.max(ev.lotSize(), 1))
+                            : ev.lots();
+                    merged.add(new OrderEventStore.OrderEvent(
+                            "EVT-BACKFILL-" + ev.executionId(),
+                            ev.createdAt(),
+                            "PLACE",
+                            ev.status() != null && ev.status().toUpperCase().contains("REJECT") ? "REJECTED" : "COMPLETED",
+                            ev.strategyId() != null && !ev.strategyId().isBlank() ? "STRATEGY_LAB" : "MANUAL",
+                            ev.executionId(), ev.strategyId(),
+                            ev.underlying(), ev.instrumentId(), ev.tradingSymbol(),
+                            ev.optionType(), ev.strike(),
+                            ev.transactionType(), lots, ev.lotSize(),
+                            ev.entryPrice(), java.math.BigDecimal.ZERO,
+                            ev.statusMessage()
+                    ));
+                }
+                merged.sort((a, b) -> {
+                    if (a.timestamp() == null && b.timestamp() == null) return 0;
+                    if (a.timestamp() == null) return 1;
+                    if (b.timestamp() == null) return -1;
+                    return b.timestamp().compareTo(a.timestamp());
+                });
+
+                sendJson(exchange, 200, service.toJson(merged));
             } catch (Exception exception) {
-                sendJson(exchange, 503, "{\"error\":\"Execution feed unavailable\",\"details\":\""
+                sendJson(exchange, 503, "{\"error\":\"Order log unavailable\",\"details\":\""
                         + escapeJson(exception.getMessage()) + "\"}");
+            }
+        }
+    }
+
+    /**
+     * PATCH /api/orders/executions/{executionId}
+     *
+     * <p>Partially or fully closes an existing execution.
+     * Request body JSON:
+     * <pre>
+     * { "lotsToClose": 2, "closePrice": 154.30 }
+     * </pre>
+     * {@code closePrice} defaults to the recorded entry price (zero P&L) when omitted.
+     */
+    private static final class OrderAdjustHandler implements HttpHandler {
+        private final OptionOrderService service;
+
+        private OrderAdjustHandler(OptionOrderService service) {
+            this.service = service;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            withCors(exchange.getResponseHeaders());
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendText(exchange, 204, "", "text/plain; charset=utf-8");
+                return;
+            }
+            if (!"PATCH".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
+                return;
+            }
+            // Extract executionId from path: /api/orders/executions/{id}
+            String path = exchange.getRequestURI().getPath();
+            String prefix = "/api/orders/executions/";
+            if (!path.startsWith(prefix) || path.length() <= prefix.length()) {
+                sendJson(exchange, 400, "{\"error\":\"Missing execution ID in path\"}");
+                return;
+            }
+            String executionId;
+            try {
+                executionId = java.net.URLDecoder.decode(
+                        path.substring(prefix.length()), java.nio.charset.StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                sendJson(exchange, 400, "{\"error\":\"Invalid execution ID encoding\"}");
+                return;
+            }
+            try {
+                String body = readRequestBody(exchange);
+                com.google.gson.JsonObject req = new com.google.gson.Gson()
+                        .fromJson(body, com.google.gson.JsonObject.class);
+                if (req == null || !req.has("lotsToClose")) {
+                    sendJson(exchange, 400, "{\"error\":\"lotsToClose is required\"}");
+                    return;
+                }
+                int lotsToClose = req.get("lotsToClose").getAsInt();
+                java.math.BigDecimal closePrice = req.has("closePrice") && !req.get("closePrice").isJsonNull()
+                        ? req.get("closePrice").getAsBigDecimal() : null;
+                OptionOrderService.ExecutionView result = service.closeLots(executionId, lotsToClose, closePrice);
+                sendJson(exchange, 200, service.toJson(result));
+            } catch (IllegalArgumentException e) {
+                sendJson(exchange, 400, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
+            } catch (Exception e) {
+                sendJson(exchange, 500, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
             }
         }
     }
@@ -2241,9 +3446,17 @@ public final class ResearchConsoleServer {
 
     private static final class AuthLoginHandler implements HttpHandler {
         private final KiteLiveSessionManager sessionManager;
+        private final OptionOrderService optionOrderService;
+        private final ResearchPositionSessionService positionSessionService;
 
-        private AuthLoginHandler(KiteLiveSessionManager sessionManager) {
+        private AuthLoginHandler(
+                KiteLiveSessionManager sessionManager,
+                OptionOrderService optionOrderService,
+                ResearchPositionSessionService positionSessionService
+        ) {
             this.sessionManager = sessionManager;
+            this.optionOrderService = optionOrderService;
+            this.positionSessionService = positionSessionService;
         }
 
         @Override
@@ -2253,6 +3466,19 @@ public final class ResearchConsoleServer {
                 sendText(exchange, 204, "", "text/plain; charset=utf-8");
                 return;
             }
+            // GET — redirect the browser to the Kite OAuth login page.
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    KiteAuthStatus status = sessionManager.authStatus();
+                    String kiteUrl = status.loginUrl();
+                    exchange.getResponseHeaders().set("Location", kiteUrl);
+                    exchange.sendResponseHeaders(302, -1);
+                } catch (Exception ex) {
+                    sendJson(exchange, 500, "{\"error\":\"Unable to resolve Kite login URL\",\"details\":\""
+                            + escapeJson(ex.getMessage()) + "\"}");
+                }
+                return;
+            }
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
                 return;
@@ -2260,7 +3486,9 @@ public final class ResearchConsoleServer {
             try {
                 Map<String, String> form = parseFormBody(exchange);
                 String requestToken = FairValueHandler.required(form, "requestToken");
-                sendJson(exchange, 200, toJson(sessionManager.login(requestToken)));
+                KiteAuthStatus status = sessionManager.login(requestToken);
+                purgePreviousDayTradingArtifacts(optionOrderService, positionSessionService, "login");
+                sendJson(exchange, 200, toJson(status));
             } catch (IllegalArgumentException exception) {
                 sendJson(exchange, 400, "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
             } catch (IOException exception) {
@@ -2659,6 +3887,10 @@ public final class ResearchConsoleServer {
             query.put(key, value);
         }
         return query;
+    }
+
+    private static boolean isDummySource(String source) {
+        return source != null && "DUMMY".equalsIgnoreCase(source.trim());
     }
 
     private static Map<String, String> parseFormBody(HttpExchange exchange) throws IOException {
@@ -3919,7 +5151,7 @@ public final class ResearchConsoleServer {
 
     private static void withCors(Headers headers) {
         headers.set("Access-Control-Allow-Origin", "*");
-        headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
         headers.set("Access-Control-Allow-Headers", "Content-Type");
     }
 
